@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LifeCash - 人生财富沙盘模拟器</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        #game-container {
+            width: 900px;
+            max-width: 100%;
+            background: #fff;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+        }
+        
+        /* 开始界面 */
+        #start-screen {
+            padding: 40px;
+            text-align: center;
+        }
+        
+        #start-screen h1 {
+            font-size: 48px;
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        
+        #start-screen .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 18px;
+        }
+        
+        .mode-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .mode-btn {
+            padding: 18px 30px;
+            font-size: 18px;
+            border: 3px solid #4facfe;
+            background: white;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 180px;
+        }
+        
+        .mode-btn:hover, .mode-btn.selected {
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            transform: translateY(-3px);
+        }
+        
+        .mode-btn h3 { margin-bottom: 8px; }
+        .mode-btn p { font-size: 13px; opacity: 0.8; }
+        
+        /* 职业选择 */
+        .career-section {
+            margin-top: 25px;
+        }
+        
+        .career-section h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .career-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+        
+        .career-card {
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: left;
+        }
+        
+        .career-card:hover, .career-card.selected {
+            border-color: #4facfe;
+            background: #f0f8ff;
+            transform: scale(1.02);
+        }
+        
+        .career-card h3 {
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .career-card .stats {
+            font-size: 12px;
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        .start-btn {
+            margin-top: 25px;
+            padding: 16px 50px;
+            font-size: 20px;
+            background: linear-gradient(90deg, #00c853 0%, #69f0ae 100%);
+            color: white;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .start-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 30px rgba(0, 200, 83, 0.4);
+        }
+        
+        .start-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        /* 多人房间 */
+        #multiplayer-section {
+            display: none;
+            margin-top: 25px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 12px;
+        }
+        
+        .room-input {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+        
+        .room-input input {
+            padding: 12px 18px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            width: 200px;
+        }
+        
+        .room-input button {
+            padding: 12px 25px;
+            font-size: 16px;
+            background: #4facfe;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        #room-status {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        #player-list {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 10px;
+        }
+        
+        .player-tag {
+            padding: 8px 15px;
+            background: #e3f2fd;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        /* 游戏界面 */
+        #game-screen {
+            display: none;
+        }
+        
+        #header {
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #header h1 {
+            font-size: 22px;
+        }
+        
+        #menu-buttons button {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            padding: 6px 14px;
+            margin-left: 6px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 13px;
+        }
+        
+        #menu-buttons button:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+        
+        #player-status {
+            background: #f8f9fa;
+            padding: 12px 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        #player-info, #attributes {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        #player-info {
+            margin-bottom: 8px;
+            font-weight: 600;
+            font-size: 15px;
+        }
+        
+        #attributes {
+            font-size: 14px;
+        }
+        
+        .attr-bar {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .progress-bar {
+            width: 100px;
+            height: 10px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s;
+            border-radius: 5px;
+        }
+        
+        .progress-fill.health { background: linear-gradient(90deg, #ff6b6b 0%, #ee5a5a 100%); }
+        .progress-fill.happiness { background: linear-gradient(90deg, #ffd93d 0%, #ffb900 100%); }
+        .progress-fill.time { background: linear-gradient(90deg, #6bcb77 0%, #4ade80 100%); }
+        
+        #time-section {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+        }
+        
+        #game-map {
+            display: flex;
+            justify-content: center;
+            padding: 15px;
+            background: #f5f5f5;
+        }
+        
+        #map-canvas {
+            background: white;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+        }
+        
+        #actions {
+            padding: 15px;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        
+        .action-btn {
+            padding: 14px;
+            font-size: 15px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        #btn-work { background: linear-gradient(135deg, #a8e6cf 0%, #88d8b0 100%); }
+        #btn-invest { background: linear-gradient(135deg, #87ceeb 0%, #6bc5e3 100%); }
+        #btn-rest { background: linear-gradient(135deg, #dda0dd 0%, #c78dc7 100%); }
+        #btn-social { background: linear-gradient(135deg, #f0e68c 0%, #e6d67a 100%); }
+        #btn-skill { background: linear-gradient(135deg, #ffa07a 0%, #f09060 100%); }
+        #btn-end-day { background: linear-gradient(135deg, #ffd700 0%, #e6c200 100%); grid-column: span 3; }
+        
+        /* 多人游戏信息 */
+        #multiplayer-info {
+            display: none;
+            background: #e3f2fd;
+            padding: 10px 20px;
+            font-size: 13px;
+        }
+        
+        #multiplayer-info .rank-list {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        #multiplayer-info .rank-item {
+            padding: 5px 12px;
+            background: white;
+            border-radius: 12px;
+        }
+        
+        /* 弹窗 */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .modal.hidden { display: none; }
+        
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 16px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            text-align: center;
+        }
+        
+        .modal-content h2 {
+            margin-bottom: 15px;
+            color: #4facfe;
+        }
+        
+        .modal-content p {
+            margin-bottom: 12px;
+            line-height: 1.6;
+            color: #555;
+        }
+        
+        .modal-btn {
+            background: linear-gradient(90deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 18px;
+            font-size: 15px;
+            cursor: pointer;
+            margin: 8px 4px;
+        }
+        
+        /* 投资面板 */
+        .investment-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin: 15px 0;
+        }
+        
+        .investment-option {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .investment-option h4 {
+            margin-bottom: 6px;
+            color: #333;
+            font-size: 15px;
+        }
+        
+        .investment-option .info {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+        
+        .investment-option input {
+            width: 100%;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 6px;
+        }
+        
+        .invest-btn {
+            width: 100%;
+            padding: 8px;
+            background: #4caf50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        
+        .invest-btn:hover { background: #45a049; }
+        
+        /* 结果报告 */
+        .report-section {
+            margin: 15px 0;
+            text-align: left;
+        }
+        
+        .report-section h3 {
+            color: #4facfe;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+        
+        /* 响应式 */
+        @media (max-width: 600px) {
+            .career-grid { grid-template-columns: repeat(2, 1fr); }
+            .investment-grid { grid-template-columns: 1fr; }
+            #actions { grid-template-columns: repeat(2, 1fr); }
+            #btn-end-day { grid-column: span 2; }
+            .mode-buttons { flex-direction: column; align-items: center; }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- 开始界面 -->
+        <div id="start-screen">
+            <h1>💰 LifeCash</h1>
+            <p class="subtitle">人生财富沙盘模拟器 - 体验一场人生，学会财富智慧</p>
+            
+            <div class="mode-buttons">
+                <div class="mode-btn selected" data-mode="endless">
+                    <h3>🎮 畅玩模式</h3>
+                    <p>无时间限制，自由探索人生</p>
+                </div>
+                <div class="mode-btn" data-mode="timed">
+                    <h3>⏱️ 限时模式</h3>
+                    <p>竞技排行，挑战最高分</p>
+                </div>
+                <div class="mode-btn" data-mode="multiplayer">
+                    <h3>👥 多人模式</h3>
+                    <p>与好友同局竞技</p>
+                </div>
+            </div>
+            
+            <div class="career-section">
+                <h2>👔 选择你的职业</h2>
+                <div class="career-grid" id="career-grid"></div>
+            </div>
+            
+            <div id="timed-settings" style="display:none; margin-top:15px;">
+                <label>游戏时长: </label>
+                <select id="time-limit">
+                    <option value="30">30分钟</option>
+                    <option value="60" selected>1小时</option>
+                    <option value="120">2小时</option>
+                </select>
+            </div>
+            
+            <!-- 多人房间设置 -->
+            <div id="multiplayer-section">
+                <h3>🏠 多人游戏设置</h3>
+                <div class="room-input">
+                    <input type="text" id="player-name" placeholder="输入你的昵称" maxlength="10">
+                    <button id="btn-create-room">创建房间</button>
+                    <button id="btn-join-room">加入房间</button>
+                </div>
+                <div class="room-input">
+                    <input type="text" id="room-code" placeholder="输入房间号">
+                </div>
+                <div id="room-status"></div>
+                <div id="player-list"></div>
+            </div>
+            
+            <button class="start-btn" id="start-btn" disabled>开始人生旅程</button>
+        </div>
+        
+        <!-- 游戏界面 -->
+        <div id="game-screen">
+            <div id="header">
+                <h1>💰 LifeCash</h1>
+                <div id="menu-buttons">
+                    <button id="btn-save">💾 存档</button>
+                    <button id="btn-menu">🏠 菜单</button>
+                </div>
+            </div>
+            
+            <div id="multiplayer-info">
+                <strong>🏆 实时排行：</strong>
+                <div class="rank-list" id="rank-list"></div>
+            </div>
+            
+            <div id="player-status">
+                <div id="player-info">
+                    <span id="player-career">👔 职业: 工薪族</span>
+                    <span id="player-money">💰 ¥50,000</span>
+                    <span id="player-day">📅 第1天</span>
+                </div>
+                <div id="attributes">
+                    <div class="attr-bar">
+                        <span>❤️:</span>
+                        <div class="progress-bar"><div class="progress-fill health" id="health-bar"></div></div>
+                        <span id="health-val">100</span>
+                    </div>
+                    <div class="attr-bar">
+                        <span>😊:</span>
+                        <div class="progress-bar"><div class="progress-fill happiness" id="happiness-bar"></div></div>
+                        <span id="happiness-val">100</span>
+                    </div>
+                    <span id="player-level">⭐ Lv.1</span>
+                    <span id="passive-income">📈 被动: ¥0/月</span>
+                </div>
+                <div id="time-section">
+                    <span>⏰ 今日:</span>
+                    <div class="progress-bar" style="width:180px;">
+                        <div class="progress-fill time" id="time-bar"></div>
+                    </div>
+                    <span id="time-val">0/24h</span>
+                </div>
+            </div>
+            
+            <div id="game-map">
+                <canvas id="map-canvas" width="700" height="400"></canvas>
+            </div>
+            
+            <div id="actions">
+                <button class="action-btn" id="btn-work">🎯 工作</button>
+                <button class="action-btn" id="btn-invest">💹 投资</button>
+                <button class="action-btn" id="btn-rest">😴 休息</button>
+                <button class="action-btn" id="btn-social">👥 社交</button>
+                <button class="action-btn" id="btn-skill">📊 技能</button>
+                <button class="action-btn" id="btn-end-day">🌙 结束今天</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 事件弹窗 -->
+    <div id="event-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="event-title">📢 事件</h2>
+            <p id="event-description"></p>
+            <button class="modal-btn" id="event-confirm">确定</button>
+        </div>
+    </div>
+    
+    <!-- 投资弹窗 -->
+    <div id="investment-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>💹 投资中心</h2>
+            <p>现金: <span id="invest-cash">¥0</span> | 已投资: <span id="invest-total">¥0</span></p>
+            <div class="investment-grid" id="investment-options"></div>
+            <button class="modal-btn" id="investment-close">关闭</button>
+        </div>
+    </div>
+    
+    <!-- 技能弹窗 -->
+    <div id="skill-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>📊 技能面板</h2>
+            <div id="skill-list"></div>
+            <p>经验: <span id="exp-val">0</span> / <span id="exp-needed">100</span></p>
+            <button class="modal-btn" id="skill-close">关闭</button>
+        </div>
+    </div>
+    
+    <!-- 游戏结束弹窗 -->
+    <div id="end-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="end-title">🏆 人生总结</h2>
+            <div id="end-report"></div>
+            <button class="modal-btn" id="end-restart">重新开始</button>
+        </div>
+    </div>
+
+    <script>
+        // ==================== 游戏配置 ====================
+        const CONFIG = {
+            careers: {
+                worker: { name: '工薪族', emoji: '👔', startMoney: 10000, salary: 5000, healthCost: 2, happinessCost: 2, timeCost: 8, skill: '稳定收入' },
+                freelancer: { name: '自由职业者', emoji: '💻', startMoney: 5000, salary: 3000, healthCost: 1, happinessCost: 1, timeCost: 6, skill: '灵活接单' },
+                entrepreneur: { name: '创业者', emoji: '🚀', startMoney: 50000, salary: 0, healthCost: 4, happinessCost: 2, timeCost: 12, skill: '商业洞察' },
+                civilServant: { name: '公务员', emoji: '🏛️', startMoney: 8000, salary: 4000, healthCost: 1, happinessCost: 0.5, timeCost: 6, skill: '人脉广泛' },
+                investor: { name: '投资人', emoji: '📊', startMoney: 100000, salary: 0, healthCost: 1, happinessCost: 1, timeCost: 3, skill: '财务分析' },
+                teacher: { name: '教师', emoji: '📚', startMoney: 6000, salary: 4500, healthCost: 1, happinessCost: 0.5, timeCost: 6, skill: '教育加成' }
+            },
+            investments: {
+                deposit: { name: '银行存款', emoji: '🏦', risk: 0.01, returnRate: 0.03, liquidity: 1.0, minAmount: 100 },
+                bond: { name: '国债', emoji: '📜', risk: 0.05, returnRate: 0.04, liquidity: 0.95, minAmount: 1000 },
+                fund: { name: '基金', emoji: '📈', risk: 0.3, returnRate: 0.15, liquidity: 0.8, minAmount: 100 },
+                stock: { name: '股票', emoji: '💹', risk: 0.5, returnRate: 0.25, liquidity: 0.9, minAmount: 100 },
+                house: { name: '房产', emoji: '🏠', risk: 0.2, returnRate: 0.08, liquidity: 0.3, minAmount: 100000 },
+                gold: { name: '黄金', emoji: '🥇', risk: 0.3, returnRate: 0.1, liquidity: 0.7, minAmount: 1000 },
+                startup: { name: '创业', emoji: '🚀', risk: 0.8, returnRate: 0.5, liquidity: 0.1, minAmount: 50000 }
+            },
+            events: [
+                { id: 'stock_tip', type: 'opportunity', name: '股市内幕', weight: 10, effect: p => { p.money += 5000; return '获得股市内幕消息，盈利5000元！'; }},
+                { id: 'bonus', type: 'opportunity', name: '年终奖', weight: 8, effect: p => { p.money += p.salary; return '收到年终奖' + p.salary + '元！'; }},
+                { id: 'illness', type: 'risk', name: '突发疾病', weight: 8, effect: p => { p.health = Math.max(0, p.health - 20); p.money -= 3000; return '突发疾病，花费3000元，健康-20'; }},
+                { id: 'layoff', type: 'risk', name: '裁员危机', weight: 5, effect: p => { p.money -= p.salary; return '遭遇裁员，损失一个月工资'; }},
+                { id: 'wedding', type: 'social', name: '朋友婚礼', weight: 15, effect: p => { p.money -= 500; p.happiness += 5; return '参加朋友婚礼，红包500元，幸福+5'; }},
+                { id: 'mentor', type: 'social', name: '贵人相助', weight: 5, effect: p => { p.exp += 50; return '遇到贵人指点，经验+50'; }},
+                { id: 'family', type: 'social', name: '家庭聚会', weight: 20, effect: p => { p.happiness = Math.min(100, p.happiness + 10); return '家庭聚会，幸福+10'; }},
+                { id: 'lottery', type: 'random', name: '彩票中奖', weight: 2, effect: p => { p.money += 10000; return '彩票小中奖10000元！'; }},
+                { id: 'traffic', type: 'random', name: '交通违章', weight: 10, effect: p => { p.money -= 200; return '交通违章罚款200元'; }},
+                { id: 'investment_chance', type: 'opportunity', name: '投资机会', weight: 12, effect: p => { p.money += 2000; return '发现绝佳投资机会，盈利2000元'; }},
+                { id: 'health_check', type: 'health', name: '健康检查', weight: 8, effect: p => { p.health = Math.min(100, p.health + 10); return '体检一切正常，健康+10'; }},
+                { id: 'promotion', type: 'opportunity', name: '升职加薪', weight: 6, effect: p => { p.salary = Math.floor(p.salary * 1.2); return '升职成功，薪资涨至' + p.salary + '元/月'; }}
+            ]
+        };
+
+        // ==================== 游戏状态 ====================
+        let gameState = {
+            mode: 'endless',
+            timeLimit: 60,
+            startTime: null,
+            selectedCareer: null,
+            player: null,
+            day: 1,
+            isRunning: false,
+            // 多人游戏状态
+            room: null,
+            roomCode: null,
+            playerName: null,
+            isHost: false,
+            players: [],
+            syncInterval: null
+        };
+
+        // ==================== 玩家类 ====================
+        class Player {
+            constructor(careerType, name = '玩家') {
+                const career = CONFIG.careers[careerType];
+                this.id = 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                this.name = name;
+                this.careerType = careerType;
+                this.career = career;
+                
+                this.money = career.startMoney;
+                this.salary = career.salary;
+                this.health = 100;
+                this.happiness = 100;
+                this.exp = 0;
+                this.level = 1;
+                
+                this.timeUsed = 0;
+                this.investments = [];
+                this.skills = [career.skill];
+                this.history = [];
+                
+                this.status = 'normal';
+            }
+
+            work() {
+                if (this.timeUsed + this.career.timeCost > 24) {
+                    return { success: false, message: '时间不够！' };
+                }
+                
+                const dailySalary = Math.floor(this.salary / 30 * (1 + this.level * 0.1));
+                this.money += dailySalary;
+                this.health = Math.max(0, this.health - this.career.healthCost);
+                this.happiness = Math.max(0, this.happiness - this.career.happinessCost);
+                this.timeUsed += this.career.timeCost;
+                this.exp += 10;
+                
+                this.checkLevelUp();
+                this.checkStatus();
+                
+                return { 
+                    success: true, 
+                    message: `工作完成！收入${dailySalary}元`,
+                    stats: { money: dailySalary, health: -this.career.healthCost, happiness: -this.career.happinessCost }
+                };
+            }
+
+            rest(hours = 4) {
+                if (this.timeUsed + hours > 24) {
+                    return { success: false, message: '时间不够！' };
+                }
+                
+                this.health = Math.min(100, this.health + hours * 3);
+                this.happiness = Math.min(100, this.happiness + hours * 2);
+                this.timeUsed += hours;
+                this.exp += 2;
+                
+                return { success: true, message: `休息${hours}小时，身心恢复！` };
+            }
+
+            socialize() {
+                if (this.timeUsed + 2 > 24) {
+                    return { success: false, message: '时间不够！' };
+                }
+                
+                this.happiness = Math.min(100, this.happiness + 15);
+                this.money -= 200;
+                this.timeUsed += 2;
+                this.exp += 5;
+                
+                return { success: true, message: '社交活动很开心！' };
+            }
+
+            invest(type, amount) {
+                const config = CONFIG.investments[type];
+                if (!config) return { success: false, message: '无效的投资类型' };
+                if (amount < config.minAmount) return { success: false, message: `最低投资额${config.minAmount}元` };
+                if (amount > this.money) return { success: false, message: '资金不足' };
+                
+                this.money -= amount;
+                this.investments.push({
+                    id: 'inv_' + Date.now(),
+                    type,
+                    amount,
+                    returnRate: config.returnRate,
+                    purchaseTime: gameState.day,
+                    name: config.name,
+                    emoji: config.emoji
+                });
+                
+                return { success: true, message: `成功投资${config.name}${amount}元` };
+            }
+
+            getPassiveIncome() {
+                // 返回月被动收入
+                return this.investments.reduce((sum, inv) => sum + inv.amount * inv.returnRate / 12, 0);
+            }
+
+            getTotalAssets() {
+                return this.investments.reduce((sum, inv) => sum + inv.amount, 0);
+            }
+
+            checkLevelUp() {
+                const needed = this.level * 100;
+                while (this.exp >= needed) {
+                    this.exp -= needed;
+                    this.level++;
+                    this.salary = Math.floor(this.salary * 1.1);
+                    this.health = Math.min(100, this.health + 10);
+                    this.happiness = Math.min(100, this.happiness + 10);
+                }
+            }
+
+            checkStatus() {
+                if (this.health <= 0) {
+                    this.status = 'dead';
+                } else if (this.money < -10000 && this.investments.length === 0) {
+                    this.status = 'bankrupt';
+                } else {
+                    const passiveIncome = this.getPassiveIncome();
+                    const monthlyExpense = 3000 + this.level * 500;
+                    if (passiveIncome >= monthlyExpense && this.money > 0) {
+                        this.status = this.getTotalAssets() > 1000000 ? 'rich' : 'free';
+                    } else {
+                        this.status = 'normal';
+                    }
+                }
+            }
+
+            endDay() {
+                // 【修复】被动收入按日结算：日被动收入 = 月被动收入 / 30
+                const monthlyPassive = this.getPassiveIncome();
+                const dailyPassive = Math.floor(monthlyPassive / 30);
+                this.money += dailyPassive;
+                
+                // 重置时间
+                this.timeUsed = 0;
+                gameState.day++;
+                
+                // 检查状态
+                this.checkStatus();
+                
+                // 记录历史
+                this.history.push({
+                    day: gameState.day,
+                    money: this.money,
+                    health: this.health,
+                    happiness: this.happiness
+                });
+            }
+
+            getReport() {
+                const passiveIncome = this.getPassiveIncome();
+                const totalAssets = this.getTotalAssets();
+                
+                return {
+                    days: gameState.day,
+                    finalMoney: this.money,
+                    totalAssets,
+                    totalWealth: this.money + totalAssets,
+                    passiveIncome,
+                    investments: this.investments.length,
+                    level: this.level,
+                    status: this.status,
+                    score: this.calculateScore()
+                };
+            }
+
+            calculateScore() {
+                return Math.floor(
+                    this.money / 100 + 
+                    this.level * 50 + 
+                    this.getPassiveIncome() * 10 + 
+                    this.investments.length * 20 +
+                    this.health +
+                    this.happiness
+                );
+            }
+
+            toJSON() {
+                return {
+                    id: this.id,
+                    name: this.name,
+                    careerType: this.careerType,
+                    money: this.money,
+                    salary: this.salary,
+                    health: this.health,
+                    happiness: this.happiness,
+                    exp: this.exp,
+                    level: this.level,
+                    timeUsed: this.timeUsed,
+                    investments: this.investments,
+                    skills: this.skills,
+                    status: this.status,
+                    score: this.calculateScore()
+                };
+            }
+        }
+
+        // ==================== 多人游戏管理器（纯前端，使用localStorage模拟）====================
+        class MultiplayerManager {
+            constructor() {
+                this.storageKey = 'lifecash_room_';
+            }
+
+            generateRoomCode() {
+                return Math.random().toString(36).substr(2, 6).toUpperCase();
+            }
+
+            createRoom(hostName) {
+                const roomCode = this.generateRoomCode();
+                const room = {
+                    code: roomCode,
+                    host: hostName,
+                    players: [{
+                        id: 'player_' + Date.now(),
+                        name: hostName,
+                        isHost: true,
+                        ready: false,
+                        score: 0
+                    }],
+                    status: 'waiting',
+                    createdAt: Date.now(),
+                    settings: { timeLimit: 30 }
+                };
+                
+                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
+                
+                // 设置过期时间（2小时后自动清理）
+                setTimeout(() => {
+                    this.closeRoom(roomCode);
+                }, 2 * 60 * 60 * 1000);
+                
+                return room;
+            }
+
+            joinRoom(roomCode, playerName) {
+                const roomData = localStorage.getItem(this.storageKey + roomCode);
+                if (!roomData) return { success: false, message: '房间不存在' };
+                
+                const room = JSON.parse(roomData);
+                if (room.players.length >= 4) return { success: false, message: '房间已满' };
+                if (room.status !== 'waiting') return { success: false, message: '游戏已开始' };
+                
+                const newPlayer = {
+                    id: 'player_' + Date.now(),
+                    name: playerName,
+                    isHost: false,
+                    ready: false,
+                    score: 0
+                };
+                
+                room.players.push(newPlayer);
+                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
+                
+                return { success: true, room, player: newPlayer };
+            }
+
+            updatePlayer(roomCode, playerId, data) {
+                const roomData = localStorage.getItem(this.storageKey + roomCode);
+                if (!roomData) return false;
+                
+                const room = JSON.parse(roomData);
+                const player = room.players.find(p => p.id === playerId);
+                if (!player) return false;
+                
+                Object.assign(player, data);
+                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
+                
+                return true;
+            }
+
+            getRoom(roomCode) {
+                const roomData = localStorage.getItem(this.storageKey + roomCode);
+                return roomData ? JSON.parse(roomData) : null;
+            }
+
+            closeRoom(roomCode) {
+                localStorage.removeItem(this.storageKey + roomCode);
+            }
+
+            // 同步玩家状态
+            syncState(roomCode, playerData) {
+                this.updatePlayer(roomCode, playerData.id, {
+                    score: playerData.score,
+                    money: playerData.money,
+                    level: playerData.level,
+                    status: playerData.status
+                });
+            }
+
+            getRankings(roomCode) {
+                const room = this.getRoom(roomCode);
+                if (!room) return [];
+                
+                return room.players.sort((a, b) => (b.score || 0) - (a.score || 0));
+            }
+        }
+
+        // ==================== UI管理 ====================
+        class UI {
+            constructor() {
+                this.canvas = document.getElementById('map-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.selectedCareer = null;
+                this.mpManager = new MultiplayerManager();
+            }
+
+            initStartScreen() {
+                // 渲染职业卡片
+                const grid = document.getElementById('career-grid');
+                grid.innerHTML = '';
+                
+                Object.entries(CONFIG.careers).forEach(([type, career]) => {
+                    const card = document.createElement('div');
+                    card.className = 'career-card';
+                    card.dataset.type = type;
+                    card.innerHTML = `
+                        <h3>${career.emoji} ${career.name}</h3>
+                        <div class="stats">
+                            💰 启动: ¥${career.startMoney.toLocaleString()} | 
+                            💵 月薪: ¥${career.salary.toLocaleString()}<br>
+                            ❤️ 消耗: ${career.healthCost} | 😊 消耗: ${career.happinessCost} | ⏰ ${career.timeCost}h<br>
+                            ✨ ${career.skill}
+                        </div>
+                    `;
+                    card.addEventListener('click', () => this.selectCareer(type));
+                    grid.appendChild(card);
+                });
+
+                // 模式选择
+                document.querySelectorAll('.mode-btn').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+                        btn.classList.add('selected');
+                        gameState.mode = btn.dataset.mode;
+                        
+                        document.getElementById('timed-settings').style.display = 
+                            gameState.mode === 'timed' ? 'block' : 'none';
+                        document.getElementById('multiplayer-section').style.display = 
+                            gameState.mode === 'multiplayer' ? 'block' : 'none';
+                        
+                        // 多人模式需要额外验证
+                        this.checkCanStart();
+                    });
+                });
+
+                // 多人房间按钮
+                document.getElementById('btn-create-room').onclick = () => this.createRoom();
+                document.getElementById('btn-join-room').onclick = () => this.joinRoom();
+
+                // 开始按钮
+                document.getElementById('start-btn').addEventListener('click', () => this.startGame());
+            }
+
+            selectCareer(type) {
+                this.selectedCareer = type;
+                document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
+                document.querySelector(`.career-card[data-type="${type}"]`).classList.add('selected');
+                gameState.selectedCareer = type;
+                this.checkCanStart();
+            }
+
+            checkCanStart() {
+                const canStart = gameState.selectedCareer && 
+                    (gameState.mode !== 'multiplayer' || gameState.room);
+                document.getElementById('start-btn').disabled = !canStart;
+            }
+
+            createRoom() {
+                const playerName = document.getElementById('player-name').value.trim() || '房主';
+                const room = this.mpManager.createRoom(playerName);
+                
+                gameState.room = room;
+                gameState.roomCode = room.code;
+                gameState.playerName = playerName;
+                gameState.isHost = true;
+                
+                document.getElementById('room-status').innerHTML = 
+                    `✅ 房间创建成功！房间号: <strong>${room.code}</strong>（分享给朋友）`;
+                this.updatePlayerList(room);
+                this.checkCanStart();
+            }
+
+            joinRoom() {
+                const playerName = document.getElementById('player-name').value.trim() || '玩家';
+                const roomCode = document.getElementById('room-code').value.trim().toUpperCase();
+                
+                if (!roomCode) {
+                    alert('请输入房间号');
+                    return;
+                }
+                
+                const result = this.mpManager.joinRoom(roomCode, playerName);
+                
+                if (result.success) {
+                    gameState.room = result.room;
+                    gameState.roomCode = roomCode;
+                    gameState.playerName = playerName;
+                    gameState.isHost = false;
+                    
+                    document.getElementById('room-status').innerHTML = 
+                        `✅ 已加入房间 ${roomCode}`;
+                    this.updatePlayerList(result.room);
+                    this.checkCanStart();
+                } else {
+                    alert(result.message);
+                }
+            }
+
+            updatePlayerList(room) {
+                const list = document.getElementById('player-list');
+                list.innerHTML = room.players.map(p => 
+                    `<span class="player-tag">${p.isHost ? '👑' : '👤'} ${p.name}</span>`
+                ).join('');
+            }
+
+            startGame() {
+                if (!gameState.selectedCareer) return;
+                
+                gameState.player = new Player(gameState.selectedCareer, gameState.playerName || '玩家');
+                gameState.day = 1;
+                gameState.startTime = Date.now();
+                gameState.isRunning = true;
+                
+                document.getElementById('start-screen').style.display = 'none';
+                document.getElementById('game-screen').style.display = 'block';
+                
+                // 多人模式显示排行榜
+                if (gameState.mode === 'multiplayer') {
+                    document.getElementById('multiplayer-info').style.display = 'block';
+                    this.startMultiplayerSync();
+                }
+                
+                this.bindGameEvents();
+                this.render();
+                
+                // 限时模式计时器
+                if (gameState.mode === 'timed' || gameState.mode === 'multiplayer') {
+                    this.startTimer();
+                }
+            }
+
+            startMultiplayerSync() {
+                // 每3秒同步一次状态
+                gameState.syncInterval = setInterval(() => {
+                    if (!gameState.isRunning || !gameState.roomCode) return;
+                    
+                    this.mpManager.syncState(gameState.roomCode, gameState.player.toJSON());
+                    
+                    // 更新排行榜
+                    const rankings = this.mpManager.getRankings(gameState.roomCode);
+                    const rankList = document.getElementById('rank-list');
+                    rankList.innerHTML = rankings.map((p, i) => 
+                        `<span class="rank-item">${i + 1}. ${p.name}: ${(p.score || 0)}分</span>`
+                    ).join('');
+                }, 3000);
+            }
+
+            bindGameEvents() {
+                document.getElementById('btn-work').onclick = () => this.doWork();
+                document.getElementById('btn-invest').onclick = () => this.showInvestment();
+                document.getElementById('btn-rest').onclick = () => this.doRest();
+                document.getElementById('btn-social').onclick = () => this.doSocial();
+                document.getElementById('btn-skill').onclick = () => this.showSkills();
+                document.getElementById('btn-end-day').onclick = () => this.endDay();
+                document.getElementById('btn-save').onclick = () => this.saveGame();
+                document.getElementById('btn-menu').onclick = () => this.returnToMenu();
+                
+                document.getElementById('event-confirm').onclick = () => this.hideModal('event-modal');
+                document.getElementById('investment-close').onclick = () => this.hideModal('investment-modal');
+                document.getElementById('skill-close').onclick = () => this.hideModal('skill-modal');
+                document.getElementById('end-restart').onclick = () => this.returnToMenu();
+            }
+
+            doWork() {
+                const result = gameState.player.work();
+                if (result.success) {
+                    this.render();
+                    this.checkRandomEvent();
+                } else {
+                    this.showEvent('⚠️ 提示', result.message);
+                }
+            }
+
+            doRest() {
+                const hours = 4;
+                const result = gameState.player.rest(hours);
+                if (result.success) {
+                    this.render();
+                } else {
+                    this.showEvent('⚠️ 提示', result.message);
+                }
+            }
+
+            doSocial() {
+                const result = gameState.player.socialize();
+                if (result.success) {
+                    this.render();
+                    this.checkRandomEvent();
+                } else {
+                    this.showEvent('⚠️ 提示', result.message);
+                }
+            }
+
+            endDay() {
+                gameState.player.endDay();
+                
+                // 显示今日被动收入提示
+                const dailyPassive = Math.floor(gameState.player.getPassiveIncome() / 30);
+                if (dailyPassive > 0) {
+                    this.showEvent('📊 日结', 
+                        `今日被动收入: ¥${dailyPassive}\n` +
+                        `月被动收入: ¥${Math.floor(gameState.player.getPassiveIncome())}\n` +
+                        `总资产: ¥${gameState.player.getTotalAssets().toLocaleString()}`
+                    );
+                }
+                
+                this.render();
+                this.checkRandomEvent();
+                
+                // 检查游戏结束
+                if (gameState.player.status !== 'normal') {
+                    this.showGameEnd();
+                }
+                
+                // 限时模式检查
+                if (gameState.mode === 'timed' || gameState.mode === 'multiplayer') {
+                    const elapsed = (Date.now() - gameState.startTime) / 1000 / 60;
+                    if (elapsed >= gameState.timeLimit) {
+                        this.showGameEnd();
+                    }
+                }
+            }
+
+            checkRandomEvent() {
+                if (Math.random() < 0.35) {
+                    const events = CONFIG.events;
+                    const weights = events.map(e => e.weight);
+                    const total = weights.reduce((a, b) => a + b, 0);
+                    let rand = Math.random() * total;
+                    
+                    let event = events[0];
+                    for (let i = 0; i < events.length; i++) {
+                        rand -= weights[i];
+                        if (rand <= 0) {
+                            event = events[i];
+                            break;
+                        }
+                    }
+                    
+                    const result = event.effect(gameState.player);
+                    this.showEvent(event.name, result);
+                    this.render();
+                }
+            }
+
+            showEvent(title, message) {
+                document.getElementById('event-title').textContent = '📢 ' + title;
+                document.getElementById('event-description').textContent = message;
+                this.showModal('event-modal');
+            }
+
+            showInvestment() {
+                const options = document.getElementById('investment-options');
+                options.innerHTML = '';
+                
+                document.getElementById('invest-cash').textContent = 
+                    '¥' + gameState.player.money.toLocaleString();
+                document.getElementById('invest-total').textContent = 
+                    '¥' + gameState.player.getTotalAssets().toLocaleString();
+                
+                Object.entries(CONFIG.investments).forEach(([type, config]) => {
+                    const div = document.createElement('div');
+                    div.className = 'investment-option';
+                    div.innerHTML = `
+                        <h4>${config.emoji} ${config.name}</h4>
+                        <div class="info">
+                            风险: ${(config.risk * 100).toFixed(0)}% | 
+                            年化: ${(config.returnRate * 100).toFixed(1)}% | 
+                            流动性: ${(config.liquidity * 100).toFixed(0)}%
+                        </div>
+                        <input type="number" id="amt-${type}" placeholder="金额" min="${config.minAmount}" step="100">
+                        <button class="invest-btn" data-type="${type}">投资</button>
+                    `;
+                    options.appendChild(div);
+                });
+                
+                options.querySelectorAll('.invest-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        const type = btn.dataset.type;
+                        const amount = parseInt(document.getElementById('amt-' + type).value) || 0;
+                        const result = gameState.player.invest(type, amount);
+                        this.showEvent('投资结果', result.message);
+                        if (result.success) {
+                            this.hideModal('investment-modal');
+                        }
+                        this.render();
+                    };
+                });
+                
+                this.showModal('investment-modal');
+            }
+
+            showSkills() {
+                const list = document.getElementById('skill-list');
+                list.innerHTML = gameState.player.skills.map(s => `<p>✨ ${s}</p>`).join('');
+                document.getElementById('exp-val').textContent = gameState.player.exp;
+                document.getElementById('exp-needed').textContent = gameState.player.level * 100;
+                this.showModal('skill-modal');
+            }
+
+            showGameEnd() {
+                const report = gameState.player.getReport();
+                let statusText = '';
+                
+                switch(report.status) {
+                    case 'dead': statusText = '💀 健康归零，人生结束'; break;
+                    case 'bankrupt': statusText = '💸 破产了，东山再起！'; break;
+                    case 'free': statusText = '🎊 恭喜实现财务自由！'; break;
+                    case 'rich': statusText = '👑 成为富豪！'; break;
+                    default: statusText = '📊 游戏结束';
+                }
+                
+                document.getElementById('end-title').textContent = statusText;
+                document.getElementById('end-report').innerHTML = `
+                    <div class="report-section">
+                        <h3>📈 财务状况</h3>
+                        <div class="stat-row"><span>游戏天数</span><span>${report.days}天</span></div>
+                        <div class="stat-row"><span>现金</span><span>¥${report.finalMoney.toLocaleString()}</span></div>
+                        <div class="stat-row"><span>总资产</span><span>¥${report.totalAssets.toLocaleString()}</span></div>
+                        <div class="stat-row"><span>总财富</span><span>¥${report.totalWealth.toLocaleString()}</span></div>
+                        <div class="stat-row"><span>月被动收入</span><span>¥${report.passiveIncome.toFixed(0)}/月</span></div>
+                    </div>
+                    <div class="report-section">
+                        <h3>🎯 成长记录</h3>
+                        <div class="stat-row"><span>等级</span><span>Lv.${report.level}</span></div>
+                        <div class="stat-row"><span>投资次数</span><span>${report.investments}次</span></div>
+                        <div class="stat-row"><span>综合评分</span><span>${report.score}分</span></div>
+                    </div>
+                `;
+                
+                // 多人模式：保存最终成绩
+                if (gameState.mode === 'multiplayer' && gameState.roomCode) {
+                    this.mpManager.syncState(gameState.roomCode, gameState.player.toJSON());
+                    clearInterval(gameState.syncInterval);
+                }
+                
+                this.showModal('end-modal');
+            }
+
+            startTimer() {
+                gameState.timeLimit = gameState.mode === 'multiplayer' ? 30 : 
+                    parseInt(document.getElementById('time-limit').value);
+                
+                const timerDiv = document.createElement('div');
+                timerDiv.id = 'timer';
+                timerDiv.style.cssText = 'background:#ff6b6b;color:white;padding:8px;text-align:center;font-weight:bold;font-size:14px;';
+                document.getElementById('header').appendChild(timerDiv);
+                
+                const updateTimer = () => {
+                    if (!gameState.isRunning) return;
+                    const elapsed = (Date.now() - gameState.startTime) / 1000 / 60;
+                    const remaining = Math.max(0, gameState.timeLimit - elapsed);
+                    timerDiv.textContent = `⏱️ 剩余: ${Math.floor(remaining)}分钟`;
+                    
+                    if (remaining <= 0) {
+                        this.showGameEnd();
+                    } else {
+                        setTimeout(updateTimer, 1000);
+                    }
+                };
+                updateTimer();
+            }
+
+            render() {
+                const p = gameState.player;
+                
+                // 更新状态栏
+                document.getElementById('player-career').textContent = 
+                    `${p.career.emoji} ${p.name} Lv.${p.level}`;
+                document.getElementById('player-money').textContent = 
+                    `💰 ¥${p.money.toLocaleString()}`;
+                document.getElementById('player-day').textContent = 
+                    `📅 第${gameState.day}天`;
+                document.getElementById('player-level').textContent = 
+                    `⭐ Lv.${p.level}`;
+                document.getElementById('passive-income').textContent = 
+                    `📈 月被动: ¥${Math.floor(p.getPassiveIncome())}`;
+                
+                // 更新进度条
+                document.getElementById('health-bar').style.width = p.health + '%';
+                document.getElementById('health-val').textContent = p.health;
+                document.getElementById('happiness-bar').style.width = p.happiness + '%';
+                document.getElementById('happiness-val').textContent = p.happiness;
+                document.getElementById('time-bar').style.width = (p.timeUsed / 24 * 100) + '%';
+                document.getElementById('time-val').textContent = `${p.timeUsed}/24h`;
+                
+                // 更新按钮状态
+                const canAct = p.timeUsed < 24;
+                document.getElementById('btn-work').disabled = !canAct;
+                document.getElementById('btn-social').disabled = !canAct;
+                
+                // 绘制地图
+                this.drawMap();
+            }
+
+            drawMap() {
+                const ctx = this.ctx;
+                const width = this.canvas.width;
+                const height = this.canvas.height;
+                
+                ctx.clearRect(0, 0, width, height);
+                
+                // 背景
+                ctx.fillStyle = '#f8f9fa';
+                ctx.fillRect(0, 0, width, height);
+                
+                // 绘制节点
+                const cols = 6;
+                const rows = 4;
+                const cellW = width / cols;
+                const cellH = height / rows;
+                
+                const nodeTypes = ['💼', '🎯', '📊', '😴', '👥', '❤️', '🎲'];
+                
+                for (let i = 0; i < cols * rows; i++) {
+                    const col = i % cols;
+                    const row = Math.floor(i / cols);
+                    const x = col * cellW + cellW / 2;
+                    const y = row * cellH + cellH / 2;
+                    const radius = 28;
+                    
+                    const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+                    gradient.addColorStop(0, '#fff');
+                    gradient.addColorStop(1, '#e0e0e0');
+                    
+                    ctx.beginPath();
+                    ctx.arc(x, y, radius, 0, Math.PI * 2);
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                    ctx.strokeStyle = '#aaa';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+                    
+                    const typeIndex = i % nodeTypes.length;
+                    ctx.font = '22px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(nodeTypes[typeIndex], x, y);
+                }
+                
+                // 绘制连线
+                ctx.strokeStyle = '#ddd';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < cols * rows - 1; i++) {
+                    const col1 = i % cols;
+                    const row1 = Math.floor(i / cols);
+                    
+                    if (col1 < cols - 1) {
+                        ctx.beginPath();
+                        ctx.moveTo(col1 * cellW + cellW / 2 + 28, row1 * cellH + cellH / 2);
+                        ctx.lineTo((col1 + 1) * cellW + cellW / 2 - 28, row1 * cellH + cellH / 2);
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            showModal(id) {
+                document.getElementById(id).classList.remove('hidden');
+            }
+
+            hideModal(id) {
+                document.getElementById(id).classList.add('hidden');
+            }
+
+            saveGame() {
+                const saveData = {
+                    version: '1.1',
+                    timestamp: Date.now(),
+                    gameState: {
+                        mode: gameState.mode,
+                        day: gameState.day,
+                        startTime: gameState.startTime
+                    },
+                    player: gameState.player.toJSON()
+                };
+                localStorage.setItem('lifecash_save', JSON.stringify(saveData));
+                this.showEvent('💾 存档成功', '游戏已保存到本地存储');
+            }
+
+            loadGame() {
+                const data = localStorage.getItem('lifecash_save');
+                if (data) {
+                    const saveData = JSON.parse(data);
+                    // 恢复游戏状态
+                    gameState.mode = saveData.gameState.mode;
+                    gameState.day = saveData.gameState.day;
+                    gameState.startTime = saveData.gameState.startTime;
+                    
+                    const p = saveData.player;
+                    gameState.player = new Player(p.careerType, p.name || '玩家');
+                    gameState.player.money = p.money;
+                    gameState.player.salary = p.salary;
+                    gameState.player.health = p.health;
+                    gameState.player.happiness = p.happiness;
+                    gameState.player.exp = p.exp;
+                    gameState.player.level = p.level;
+                    gameState.player.timeUsed = p.timeUsed || 0;
+                    gameState.player.investments = p.investments || [];
+                    gameState.player.skills = p.skills;
+                    gameState.player.status = p.status;
+                    
+                    document.getElementById('start-screen').style.display = 'none';
+                    document.getElementById('game-screen').style.display = 'block';
+                    this.bindGameEvents();
+                    this.render();
+                    this.showEvent('📂 读档成功', '游戏已从存档恢复');
+                    return true;
+                }
+                return false;
+            }
+
+            returnToMenu() {
+                gameState.isRunning = false;
+                if (gameState.syncInterval) {
+                    clearInterval(gameState.syncInterval);
+                }
+                
+                document.getElementById('game-screen').style.display = 'none';
+                document.getElementById('start-screen').style.display = 'block';
+                document.getElementById('multiplayer-info').style.display = 'none';
+                
+                this.selectedCareer = null;
+                document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
+                document.getElementById('start-btn').disabled = true;
+            }
+        }
+
+        // ==================== 初始化 ====================
+        const ui = new UI();
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            ui.initStartScreen();
+            
+            // 尝试自动加载存档
+            if (localStorage.getItem('lifecash_save')) {
+                const shouldLoad = confirm('发现存档，是否继续上次游戏？');
+                if (shouldLoad) {
+                    ui.loadGame();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
