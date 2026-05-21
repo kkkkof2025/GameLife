@@ -3,7 +3,7 @@
 > 体验一场人生，学会财富智慧
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Platform](https://img.shields.io/badge/platform-Web%20Pages-blue)](https://pages.github.com/)
+[![Platform](https://img.shields.io/badge/platform-GitHub%20Pages-blue)](https://pages.github.com/)
 
 ## 🎮 游戏简介
 
@@ -24,17 +24,6 @@ https://yourusername.github.io/lifecash/
 2. 直接用浏览器打开 `index.html` 文件
 3. 选择职业，开始游戏
 
-```powershell
-# Windows 用户
-start index.html
-
-# macOS 用户
-open index.html
-
-# Linux 用户
-xdg-open index.html
-```
-
 ## 🎯 游戏功能
 
 ### 游戏模式
@@ -43,7 +32,30 @@ xdg-open index.html
 |------|------|
 | 🎮 畅玩模式 | 无时间限制，自由探索人生，破产后可东山再起 |
 | ⏱️ 限时模式 | 30分钟/1小时/2小时限时挑战，输出最终报告 |
-| 👥 多人模式 | 与好友同局竞技，实时排行（纯前端实现） |
+| 👥 多人模式 | WebRTC P2P直连，与好友同局竞技，实时排行 |
+
+### 🏆 排行榜系统
+
+- **综合排行榜** - 记录每局游戏的综合评分，本地存储 + 可导出/导入JSON
+- **人生赢家排行榜** - 实现财务自由或成为富豪后可提名，专属荣耀榜单
+- **GitHub Gist 同步** - 可选：通过 GitHub Token 将排行榜同步到 Gist，实现跨设备共享
+
+### 👥 多人联机（WebRTC P2P）
+
+基于 **PeerJS + WebRTC** 实现点对点直连，**无需后端服务器**，可直接部署到 GitHub Pages。
+
+**玩法流程：**
+1. 选择多人模式 → 输入昵称 → 点击"创建房间"
+2. 复制生成的 **邀请链接** 或 **Peer ID** 发给朋友
+3. 朋友打开链接（或输入Peer ID）→ 自动加入房间
+4. 房主点击"开始人生旅程"，所有人同时开始游戏
+5. 游戏中实时同步排行榜，结束后可提名人生赢家
+
+**技术原理：**
+- 使用 PeerJS 库封装 WebRTC DataChannel
+- 房主作为 Host，其他玩家通过 PeerJS 信令服务器建立 P2P 连接
+- 游戏状态通过 DataChannel 直接在浏览器之间传输
+- PeerJS 免费信令服务器: `0.peerjs.com`
 
 ### 职业系统
 
@@ -89,7 +101,9 @@ xdg-open index.html
 
 - [x] 单人畅玩模式
 - [x] 限时挑战模式
-- [x] 多人游戏模式（纯前端 localStorage）
+- [x] 多人游戏模式（WebRTC P2P，无需服务器）
+- [x] 排行榜系统（本地存储 + GitHub Gist 同步）
+- [x] 人生赢家提名排行榜
 - [x] 6种职业系统
 - [x] 7种投资品种
 - [x] 随机事件系统
@@ -97,21 +111,15 @@ xdg-open index.html
 - [x] 本地存档/读档
 - [x] 游戏结束报告
 - [x] 响应式界面
-
-### 开发中 🔄
-
-- [ ] 云端排行榜（需后端支持）
-- [ ] 成就系统
-- [ ] 成就徽章分享
+- [x] GitHub Pages 部署支持
 
 ### 待开发 📋
 
-- [ ] 全球排行榜
-- [ ] 好友系统
+- [ ] 断线重连机制
 - [ ] 观战系统
 - [ ] 教程引导
 - [ ] 更多职业/投资品种
-- [ ] 社交媒体分享
+- [ ] 社交媒体分享卡片
 
 ## 🛠️ 技术栈
 
@@ -120,33 +128,36 @@ xdg-open index.html
 | 前端框架 | 原生 HTML5 + CSS3 + JavaScript |
 | 画布渲染 | Canvas 2D |
 | 数据存储 | LocalStorage |
-| 多人同步 | WebRTC / PeerJS / Firebase（可选） |
-| 部署平台 | GitHub Pages（静态托管） |
+| 多人同步 | WebRTC (PeerJS) |
+| 排行榜同步 | GitHub Gist API (可选) |
+| 部署平台 | GitHub Pages（纯静态） |
 
 ## 📁 项目结构
 
 ```
 lifecash/
-├── index.html          # 主游戏文件（包含HTML/CSS/JS）
+├── index.html          # 主游戏文件（包含HTML/CSS/JS，约80KB）
 ├── README.md           # 项目说明文档
-└── LICENSE            # MIT 开源协议
+└── LICENSE             # MIT 开源协议
 ```
 
-## 🎨 自定义部署
-
-### 部署到 GitHub Pages
+## 🎨 部署到 GitHub Pages
 
 1. Fork 本项目
 2. 进入 Settings → Pages
 3. Source 选择 `main` branch
 4. 访问 `https://yourusername.github.io/lifecash/`
 
-### 自定义域名
+无需后端，纯静态部署即可使用全部功能（包括多人联机）。
 
-在 `docs/` 目录添加 `CNAME` 文件：
-```
-yourdomain.com
-```
+## 🔗 排行榜同步说明
+
+排行榜数据默认存储在浏览器 localStorage 中。如需跨设备共享：
+
+1. 在 GitHub 创建一个 [Personal Access Token](https://github.com/settings/tokens)（只需 `gist` 权限）
+2. 在游戏排行榜面板中输入 Token，点击"同步"
+3. 数据将上传到你的私有 GitHub Gist
+4. 其他设备可通过 Gist ID 导入排行榜数据
 
 ## 🤝 贡献指南
 
@@ -159,6 +170,14 @@ yourdomain.com
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.0.0 (2026-05-21)
+- ✨ 多人模式重构：从 localStorage 升级为 WebRTC P2P 直连
+- ✨ 新增排行榜系统：综合排行榜 + 人生赢家排行榜
+- ✨ 新增人生赢家提名功能：达成财务自由/富豪后可提名
+- ✨ 新增 GitHub Gist 排行榜同步（可选）
+- ✨ 支持邀请链接一键加入房间
+- ✨ 完整支持 GitHub Pages 纯静态部署
 
 ### v1.1.0 (2026-04-28)
 - ✨ 新增多人游戏模式
@@ -181,6 +200,7 @@ yourdomain.com
 ## 🙏 致谢
 
 - 游戏灵感来源于财富流等金融模拟游戏
+- 多人联机使用 [PeerJS](https://peerjs.com/) 库
 - 图标使用 Emoji 字符
 - UI 设计参考现代卡片式布局
 

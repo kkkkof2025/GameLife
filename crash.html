@@ -478,6 +478,7 @@
             .mode-buttons { flex-direction: column; align-items: center; }
         }
     </style>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body>
     <div id="game-container">
@@ -517,20 +518,24 @@
             
             <!-- 多人房间设置 -->
             <div id="multiplayer-section">
-                <h3>🏠 多人游戏设置</h3>
+                <h3>🏠 多人游戏（P2P直连）</h3>
+                <p style="font-size:13px;color:#666;margin-bottom:12px;">基于 WebRTC 点对点连接，无需服务器。创建房间后将链接或Peer ID发给朋友。</p>
                 <div class="room-input">
                     <input type="text" id="player-name" placeholder="输入你的昵称" maxlength="10">
-                    <button id="btn-create-room">创建房间</button>
-                    <button id="btn-join-room">加入房间</button>
+                    <button id="btn-create-room">🏠 创建房间</button>
                 </div>
                 <div class="room-input">
-                    <input type="text" id="room-code" placeholder="输入房间号">
+                    <input type="text" id="room-code" placeholder="输入房间Peer ID或粘贴邀请链接" style="width:300px;">
+                    <button id="btn-join-room">🚪 加入房间</button>
                 </div>
                 <div id="room-status"></div>
                 <div id="player-list"></div>
             </div>
             
-            <button class="start-btn" id="start-btn" disabled>开始人生旅程</button>
+            <div style="display:flex;gap:12px;justify-content:center;margin-top:25px;flex-wrap:wrap;">
+                <button class="start-btn" id="start-btn" disabled>开始人生旅程</button>
+                <button class="start-btn" id="btn-leaderboard" style="background:linear-gradient(90deg,#f59e0b,#d97706);padding:16px 30px;">🏆 排行榜</button>
+            </div>
         </div>
         
         <!-- 游戏界面 -->
@@ -589,6 +594,15 @@
                 <button class="action-btn" id="btn-skill">📊 技能</button>
                 <button class="action-btn" id="btn-end-day">🌙 结束今天</button>
             </div>
+        </div>
+    </div>
+    
+    <!-- 排行榜弹窗 -->
+    <div id="leaderboard-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>🏆 排行榜</h2>
+            <div id="leaderboard-list"></div>
+            <button class="modal-btn" id="leaderboard-close" onclick="document.getElementById('leaderboard-modal').classList.add('hidden')">关闭</button>
         </div>
     </div>
     
@@ -881,104 +895,248 @@
                 };
             }
         }
-
-        // ==================== 多人游戏管理器（纯前端，使用localStorage模拟）====================
+        // ==================== 多人游戏管理器（WebRTC P2P via PeerJS）====================
         class MultiplayerManager {
             constructor() {
-                this.storageKey = 'lifecash_room_';
+                this.peer = null;
+                this.myPeerId = null;
+                this.connections = new Map();
+                this.room = null;
+                this.myPlayerId = null;
+                this.isHost = false;
+                this.onRoomState = null;
+                this.onConnectionChange = null;
+                this.leaderboard = new this.LeaderboardManager();
             }
 
-            generateRoomCode() {
-                return Math.random().toString(36).substr(2, 6).toUpperCase();
+            // ===== 排行榜管理器 =====
+            LeaderboardManager = class {
+                constructor() {
+                    this.STORAGE_KEY = 'lifecash_leaderboard';
+                    this.WINNERS_KEY = 'lifecash_winners';
+                    this.GIST_ID_KEY = 'lifecash_gist_id';
+                }
+                addEntry(entry) {
+                    const list = this.getAll();
+                    list.push({ ...entry, timestamp: Date.now(), id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) });
+                    list.sort((a, b) => (b.score || 0) - (a.score || 0));
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list.slice(0, 100)));
+                    return list;
+                }
+                getAll() {
+                    try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+                }
+                getTop(n = 20) { return this.getAll().slice(0, n); }
+                nominateLifeWinner(playerData) {
+                    const winners = this.getLifeWinners();
+                    winners.push({ ...playerData, nominatedAt: new Date().toISOString(), id: 'w_' + Date.now() });
+                    winners.sort((a, b) => (b.score || 0) - (a.score || 0));
+                    localStorage.setItem(this.WINNERS_KEY, JSON.stringify(winners.slice(0, 50)));
+                    return winners;
+                }
+                getLifeWinners() {
+                    try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch { return []; }
+                }
+                getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
+                async syncToGist(token) {
+                    const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), updatedAt: new Date().toISOString() };
+                    const gistId = localStorage.getItem(this.GIST_ID_KEY);
+                    const body = { description: 'LifeCash Global Leaderboard', public: true, files: { 'leaderboard.json': { content: JSON.stringify(data, null, 2) } } };
+                    const url = gistId ? `https://api.github.com/gists/${gistId}` : 'https://api.github.com/gists';
+                    const method = gistId ? 'PATCH' : 'POST';
+                    const resp = await fetch(url, { method, headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
+                    const result = await resp.json();
+                    if (!gistId && result.id) localStorage.setItem(this.GIST_ID_KEY, result.id);
+                    return result;
+                }
+                async loadFromGist(gistId) {
+                    const resp = await fetch(`https://api.github.com/gists/${gistId}`);
+                    if (!resp.ok) throw new Error('无法加载 Gist');
+                    const result = await resp.json();
+                    const file = result.files?.['leaderboard.json'];
+                    if (file) {
+                        const data = JSON.parse(file.content);
+                        if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                        if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                    }
+                    return result;
+                }
+                exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), exportedAt: new Date().toISOString() }, null, 2); }
+                importData(jsonStr) {
+                    const data = JSON.parse(jsonStr);
+                    if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                    if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                }
+            };
+
+            // ===== 初始化 =====
+            init() {
+                if (typeof Peer === 'undefined') { console.warn('PeerJS 未加载'); return; }
+                this.peer = new Peer(undefined, { debug: 1 });
+                this.peer.on('open', id => { this.myPeerId = id; this.onConnectionChange?.('online', 'P2P就绪'); });
+                this.peer.on('connection', conn => this._setupConn(conn));
+                this.peer.on('error', err => { console.error('PeerJS:', err); this.onConnectionChange?.('offline', 'P2P错误: ' + err.type); });
+                this.peer.on('disconnected', () => this.onConnectionChange?.('offline', 'P2P断开'));
             }
 
-            createRoom(hostName) {
-                const roomCode = this.generateRoomCode();
-                const room = {
-                    code: roomCode,
-                    host: hostName,
-                    players: [{
-                        id: 'player_' + Date.now(),
-                        name: hostName,
-                        isHost: true,
-                        ready: false,
-                        score: 0
-                    }],
-                    status: 'waiting',
-                    createdAt: Date.now(),
-                    settings: { timeLimit: 30 }
+            _setupConn(conn) {
+                conn.on('open', () => {
+                    this.connections.set(conn.peer, conn);
+                    if (this.isHost) {
+                        conn.send({ type: 'room_state', room: this.room });
+                        this._broadcast({ type: 'peer_joined', peerId: conn.peer }, conn.peer);
+                    }
+                    this.onConnectionChange?.('online', `已连接 ${this.connections.size} 节点`);
+                });
+                conn.on('data', data => this._onData(data, conn));
+                conn.on('close', () => {
+                    this.connections.delete(conn.peer);
+                    if (this.isHost && this.room) {
+                        this.room.players = this.room.players.filter(p => p.peerId !== conn.peer);
+                        this._broadcastRoom();
+                    }
+                    this.onConnectionChange?.(this.connections.size > 0 ? 'online' : 'offline', `连接数: ${this.connections.size}`);
+                });
+                conn.on('error', err => console.error('Conn error:', err));
+            }
+
+            _onData(data, conn) {
+                if (data.type === 'room_state') { this.room = data.room; this.onRoomState?.(this.room); }
+                else if (data.type === 'update_player' && this.isHost) this._handleUpdate(data, conn);
+                else if (data.type === 'start_room' && this.isHost) { this.room.status = 'playing'; this._broadcastRoom(); }
+                else if (data.type === 'final_score') { this._handleFinal(data, conn); }
+                else if (data.type === 'chat' && this.isHost) this._broadcast(data);
+                else if (data.type === 'request_state' && this.isHost) conn.send({ type: 'room_state', room: this.room });
+            }
+
+            _handleUpdate(data, conn) {
+                if (!this.room) return;
+                const p = this.room.players.find(pl => pl.id === data.playerId);
+                if (p) { Object.assign(p, data.patch || {}); this._broadcastRoom(); }
+            }
+
+            _handleFinal(data, conn) {
+                if (!this.room) return;
+                const p = this.room.players.find(pl => pl.id === data.playerId);
+                if (p) { Object.assign(p, { score: data.score, wealth: data.wealth, level: data.level, finished: true, status: 'finished' }); }
+                if (this.room.players.every(pl => pl.finished)) this.room.status = 'finished';
+                this._broadcastRoom();
+            }
+
+            _broadcast(msg, excludePeerId = null) {
+                for (const [peerId, conn] of this.connections) {
+                    if (peerId !== excludePeerId && conn.open) conn.send(msg);
+                }
+            }
+
+            _broadcastRoom() { this._broadcast({ type: 'room_state', room: this.room }); this.onRoomState?.(this.room); }
+
+            // ===== 公开API =====
+            createRoom(hostName, careerType) {
+                if (!this.peer) this.init();
+                this.isHost = true;
+                this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                const roomCode = Math.random().toString(36).substr(2, 6).toUpperCase();
+                this.room = {
+                    code: roomCode, host: hostName, hostPeerId: this.myPeerId,
+                    players: [{ id: this.myPlayerId, peerId: this.myPeerId, name: hostName, careerType: careerType || 'worker', isHost: true, score: 0, wealth: 0, level: 1, status: 'waiting', finished: false }],
+                    status: 'waiting', createdAt: Date.now(), settings: { timeLimit: 30 }
                 };
-                
-                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
-                
-                // 设置过期时间（2小时后自动清理）
-                setTimeout(() => {
-                    this.closeRoom(roomCode);
-                }, 2 * 60 * 60 * 1000);
-                
-                return room;
+                this.onRoomState?.(this.room);
+                return this.room;
             }
 
-            joinRoom(roomCode, playerName) {
-                const roomData = localStorage.getItem(this.storageKey + roomCode);
-                if (!roomData) return { success: false, message: '房间不存在' };
-                
-                const room = JSON.parse(roomData);
-                if (room.players.length >= 4) return { success: false, message: '房间已满' };
-                if (room.status !== 'waiting') return { success: false, message: '游戏已开始' };
-                
-                const newPlayer = {
-                    id: 'player_' + Date.now(),
-                    name: playerName,
-                    isHost: false,
-                    ready: false,
-                    score: 0
-                };
-                
-                room.players.push(newPlayer);
-                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
-                
-                return { success: true, room, player: newPlayer };
-            }
-
-            updatePlayer(roomCode, playerId, data) {
-                const roomData = localStorage.getItem(this.storageKey + roomCode);
-                if (!roomData) return false;
-                
-                const room = JSON.parse(roomData);
-                const player = room.players.find(p => p.id === playerId);
-                if (!player) return false;
-                
-                Object.assign(player, data);
-                localStorage.setItem(this.storageKey + roomCode, JSON.stringify(room));
-                
-                return true;
-            }
-
-            getRoom(roomCode) {
-                const roomData = localStorage.getItem(this.storageKey + roomCode);
-                return roomData ? JSON.parse(roomData) : null;
-            }
-
-            closeRoom(roomCode) {
-                localStorage.removeItem(this.storageKey + roomCode);
-            }
-
-            // 同步玩家状态
-            syncState(roomCode, playerData) {
-                this.updatePlayer(roomCode, playerData.id, {
-                    score: playerData.score,
-                    money: playerData.money,
-                    level: playerData.level,
-                    status: playerData.status
+            joinRoom(hostPeerId, playerName, careerType) {
+                return new Promise((resolve, reject) => {
+                    if (!this.peer) this.init();
+                    this.isHost = false;
+                    this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                    const conn = this.peer.connect(hostPeerId, { reliable: true });
+                    const timeout = setTimeout(() => reject(new Error('连接超时')), 10000);
+                    conn.on('open', () => {
+                        clearTimeout(timeout);
+                        this._setupConn(conn);
+                        conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName, careerType: careerType || 'worker' });
+                        setTimeout(() => {
+                            if (this.room) resolve({ success: true, room: this.room });
+                            else {
+                                conn.send({ type: 'request_state' });
+                                setTimeout(() => {
+                                    if (this.room) resolve({ success: true, room: this.room });
+                                    else reject(new Error('未收到房间信息'));
+                                }, 2000);
+                            }
+                        }, 1500);
+                    });
+                    conn.on('error', err => { clearTimeout(timeout); reject(err); });
+                    // Handle join_response
+                    const origOnData = this._onData.bind(this);
+                    this._onData = (data, c) => {
+                        if (data.type === 'room_state') { this.room = data.room; this.onRoomState?.(this.room); }
+                        origOnData(data, c);
+                    };
                 });
             }
 
-            getRankings(roomCode) {
-                const room = this.getRoom(roomCode);
-                if (!room) return [];
-                
-                return room.players.sort((a, b) => (b.score || 0) - (a.score || 0));
+            updateMyState(patch) {
+                if (!this.room || !this.myPlayerId) return;
+                const p = this.room.players.find(pl => pl.id === this.myPlayerId);
+                if (p) Object.assign(p, patch);
+                if (this.isHost) this._broadcastRoom();
+                else {
+                    const hostConn = this.connections.values().next().value;
+                    if (hostConn?.open) hostConn.send({ type: 'update_player', playerId: this.myPlayerId, patch });
+                }
+                this.onRoomState?.(this.room);
+            }
+
+            submitFinalScore(score, wealth, level) {
+                this.updateMyState({ score, wealth, level, finished: true, status: 'finished' });
+                if (!this.isHost) {
+                    const hostConn = this.connections.values().next().value;
+                    if (hostConn?.open) hostConn.send({ type: 'final_score', playerId: this.myPlayerId, score, wealth, level });
+                }
+            }
+
+            startRoom() {
+                if (!this.room) return;
+                this.room.status = 'playing';
+                if (this.isHost) this._broadcastRoom();
+                else {
+                    const hostConn = this.connections.values().next().value;
+                    if (hostConn?.open) hostConn.send({ type: 'start_room' });
+                }
+            }
+
+            getRankings() {
+                if (!this.room) return [];
+                return [...this.room.players].sort((a, b) => (b.score || 0) - (a.score || 0) || (b.wealth || 0) - (a.wealth || 0));
+            }
+
+            getShareLink() {
+                if (!this.myPeerId) return '';
+                return window.location.href.split('#')[0].split('?')[0] + '?join=' + this.myPeerId;
+            }
+
+            checkUrlInvite() {
+                const params = new URLSearchParams(window.location.search);
+                return params.get('join');
+            }
+
+            sendChat(message) {
+                if (this.isHost) this._broadcast({ type: 'chat', playerId: this.myPlayerId, message, timestamp: Date.now() });
+                else {
+                    const hostConn = this.connections.values().next().value;
+                    if (hostConn?.open) hostConn.send({ type: 'chat', playerId: this.myPlayerId, message, timestamp: Date.now() });
+                }
+            }
+
+            destroy() {
+                for (const conn of this.connections.values()) try { conn.close(); } catch {}
+                this.connections.clear();
+                if (this.peer) try { this.peer.destroy(); } catch {}
+                this.peer = null; this.room = null; this.myPeerId = null;
             }
         }
 
@@ -989,6 +1147,7 @@
                 this.ctx = this.canvas.getContext('2d');
                 this.selectedCareer = null;
                 this.mpManager = new MultiplayerManager();
+                this.nominatedThisGame = false;
             }
 
             initStartScreen() {
@@ -1036,6 +1195,23 @@
 
                 // 开始按钮
                 document.getElementById('start-btn').addEventListener('click', () => this.startGame());
+
+                // 排行榜按钮
+                const lbBtn = document.getElementById('btn-leaderboard');
+                if (lbBtn) lbBtn.onclick = () => this.showLeaderboard();
+
+                // 检查URL邀请
+                const invitePeerId = this.mpManager.checkUrlInvite();
+                if (invitePeerId) {
+                    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('selected'));
+                    document.querySelector('.mode-btn[data-mode="multiplayer"]')?.classList.add('selected');
+                    gameState.mode = 'multiplayer';
+                    document.getElementById('multiplayer-section').style.display = 'block';
+                    document.getElementById('timed-settings').style.display = 'none';
+                    document.getElementById('room-status').innerHTML = 
+                        `🎮 检测到房间邀请！输入昵称后点击"加入房间"，房间Peer ID: <strong>${invitePeerId}</strong>`;
+                    document.getElementById('room-code').value = invitePeerId;
+                }
             }
 
             selectCareer(type) {
@@ -1054,42 +1230,54 @@
 
             createRoom() {
                 const playerName = document.getElementById('player-name').value.trim() || '房主';
-                const room = this.mpManager.createRoom(playerName);
+                const room = this.mpManager.createRoom(playerName, this.selectedCareer);
                 
                 gameState.room = room;
                 gameState.roomCode = room.code;
                 gameState.playerName = playerName;
                 gameState.isHost = true;
-                
+
+                // 设置回调
+                this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
+                this.mpManager.onConnectionChange = (state, msg) => {
+                    const el = document.getElementById('room-status');
+                    if (el && state === 'online') el.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
+                };
+
+                const shareLink = this.mpManager.getShareLink();
                 document.getElementById('room-status').innerHTML = 
-                    `✅ 房间创建成功！房间号: <strong>${room.code}</strong>（分享给朋友）`;
+                    `✅ 房间创建成功！房间号: <strong>${room.code}</strong><br>` +
+                    `<small>分享链接给朋友（需同时打开页面）: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all">${shareLink}</code></small><br>` +
+                    `<small>或让对方输入Peer ID: <strong>${this.mpManager.myPeerId || '等待初始化...'}</strong></small>`;
                 this.updatePlayerList(room);
                 this.checkCanStart();
             }
 
-            joinRoom() {
+            async joinRoom() {
                 const playerName = document.getElementById('player-name').value.trim() || '玩家';
-                const roomCode = document.getElementById('room-code').value.trim().toUpperCase();
+                const hostPeerId = document.getElementById('room-code').value.trim();
                 
-                if (!roomCode) {
-                    alert('请输入房间号');
+                if (!hostPeerId) {
+                    alert('请输入房间号（Peer ID）');
                     return;
                 }
+
+                document.getElementById('room-status').innerHTML = '⏳ 正在连接...';
                 
-                const result = this.mpManager.joinRoom(roomCode, playerName);
-                
-                if (result.success) {
+                try {
+                    const result = await this.mpManager.joinRoom(hostPeerId, playerName, this.selectedCareer);
                     gameState.room = result.room;
-                    gameState.roomCode = roomCode;
+                    gameState.roomCode = result.room.code;
                     gameState.playerName = playerName;
                     gameState.isHost = false;
-                    
-                    document.getElementById('room-status').innerHTML = 
-                        `✅ 已加入房间 ${roomCode}`;
+
+                    this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
+
+                    document.getElementById('room-status').innerHTML = `✅ 已加入房间`;
                     this.updatePlayerList(result.room);
                     this.checkCanStart();
-                } else {
-                    alert(result.message);
+                } catch (err) {
+                    document.getElementById('room-status').innerHTML = `❌ 加入失败: ${err.message}`;
                 }
             }
 
@@ -1127,19 +1315,30 @@
             }
 
             startMultiplayerSync() {
-                // 每3秒同步一次状态
+                if (gameState.syncInterval) clearInterval(gameState.syncInterval);
                 gameState.syncInterval = setInterval(() => {
-                    if (!gameState.isRunning || !gameState.roomCode) return;
-                    
-                    this.mpManager.syncState(gameState.roomCode, gameState.player.toJSON());
-                    
-                    // 更新排行榜
-                    const rankings = this.mpManager.getRankings(gameState.roomCode);
-                    const rankList = document.getElementById('rank-list');
-                    rankList.innerHTML = rankings.map((p, i) => 
-                        `<span class="rank-item">${i + 1}. ${p.name}: ${(p.score || 0)}分</span>`
-                    ).join('');
+                    if (!gameState.isRunning) return;
+                    const p = gameState.player;
+                    this.mpManager.updateMyState({
+                        score: p.calculateScore(),
+                        wealth: p.money + p.getTotalAssets(),
+                        level: p.level,
+                        day: gameState.day,
+                        money: p.money,
+                        status: p.status,
+                        careerType: p.careerType
+                    });
+                    this.renderRankings();
                 }, 3000);
+            }
+
+            renderRankings() {
+                const rankList = document.getElementById('rank-list');
+                if (!rankList) return;
+                const rankings = this.mpManager.getRankings();
+                rankList.innerHTML = rankings.map((p, i) => 
+                    `<span class="rank-item">${i + 1}. ${p.name}: ${(p.score || 0)}分</span>`
+                ).join('');
             }
 
             bindGameEvents() {
@@ -1307,6 +1506,29 @@
                     default: statusText = '📊 游戏结束';
                 }
                 
+                // 保存到排行榜
+                this.mpManager.leaderboard.addEntry({
+                    name: gameState.player.name,
+                    career: CONFIG.careers[gameState.player.careerType]?.name || '未知',
+                    score: report.score,
+                    wealth: report.totalWealth,
+                    level: report.level,
+                    days: report.days,
+                    status: report.status,
+                    mode: gameState.mode
+                });
+                this.nominatedThisGame = false;
+
+                const isWinner = ['free', 'rich'].includes(report.status);
+                const nominateHtml = isWinner ? `
+                    <div style="margin:15px 0;padding:15px;background:linear-gradient(135deg,#fff7ed,#fef3c7);border-radius:12px;border:2px solid #f59e0b;">
+                        <p style="font-weight:bold;color:#92400e;margin-bottom:10px;">🏆 恭喜达成「人生赢家」！</p>
+                        <button class="modal-btn" id="btn-nominate" style="background:linear-gradient(90deg,#f59e0b,#d97706);" onclick="ui.nominateLifeWinner()">
+                            👑 提名人生赢家排行榜
+                        </button>
+                    </div>
+                ` : '';
+                
                 document.getElementById('end-title').textContent = statusText;
                 document.getElementById('end-report').innerHTML = `
                     <div class="report-section">
@@ -1323,15 +1545,89 @@
                         <div class="stat-row"><span>投资次数</span><span>${report.investments}次</span></div>
                         <div class="stat-row"><span>综合评分</span><span>${report.score}分</span></div>
                     </div>
+                    ${nominateHtml}
                 `;
                 
                 // 多人模式：保存最终成绩
-                if (gameState.mode === 'multiplayer' && gameState.roomCode) {
-                    this.mpManager.syncState(gameState.roomCode, gameState.player.toJSON());
-                    clearInterval(gameState.syncInterval);
+                if (gameState.mode === 'multiplayer') {
+                    this.mpManager.submitFinalScore(report.score, report.totalWealth, report.level);
+                    if (gameState.syncInterval) clearInterval(gameState.syncInterval);
+                    this.renderRankings();
                 }
                 
                 this.showModal('end-modal');
+            }
+
+            nominateLifeWinner() {
+                if (this.nominatedThisGame) { alert('本局已提名过'); return; }
+                const p = gameState.player;
+                const report = p.getReport();
+                this.mpManager.leaderboard.nominateLifeWinner({
+                    name: p.name,
+                    career: CONFIG.careers[p.careerType]?.name || '未知',
+                    score: report.score,
+                    wealth: report.totalWealth,
+                    level: report.level,
+                    days: report.days,
+                    status: report.status
+                });
+                this.nominatedThisGame = true;
+                const btn = document.getElementById('btn-nominate');
+                if (btn) { btn.textContent = '✅ 已提名'; btn.disabled = true; btn.style.opacity = '0.6'; }
+                alert('🎉 已成功提名到人生赢家排行榜！');
+            }
+
+            showLeaderboard() {
+                const list = document.getElementById('leaderboard-list');
+                if (!list) return;
+                const rankings = this.mpManager.leaderboard.getTop(10);
+                const winners = this.mpManager.leaderboard.getWinnersTop(10);
+                let html = '<h3 style="color:#4facfe;margin-bottom:12px;">🏆 综合排行榜 TOP 10</h3>';
+                if (rankings.length === 0) html += '<p style="color:#888">暂无记录，完成一局游戏即可上榜</p>';
+                else html += rankings.map((e, i) => `<div class="stat-row"><span>${i<=2?['🥇','🥈','🥉'][i]:''} ${e.name} · ${e.career||''}</span><span>${e.score}分</span></div>`).join('');
+                html += '<h3 style="color:#f59e0b;margin:18px 0 12px;">👑 人生赢家排行榜</h3>';
+                if (winners.length === 0) html += '<p style="color:#888">暂无人生赢家，实现财务自由或成为富豪即可提名</p>';
+                else html += winners.map((e, i) => `<div class="stat-row"><span>${i<=2?['🥇','🥈','🥉'][i]:''} ${e.name} · ${e.status==='rich'?'👑富豪':'🎊自由'}</span><span>¥${(e.wealth||0).toLocaleString()}</span></div>`).join('');
+                html += `<div style="margin-top:18px;padding-top:14px;border-top:1px solid #eee;">
+                    <p style="font-size:12px;color:#888;margin-bottom:8px;">🔗 排行榜数据存储在本地。同步到GitHub Gist可实现跨设备共享：</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <input type="text" id="gist-token" placeholder="GitHub Token (可选)" style="flex:1;min-width:180px;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:12px;">
+                        <button onclick="ui.syncLeaderboard()" style="padding:8px 14px;background:#24292e;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">⬆️ 同步</button>
+                    </div>
+                    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                        <button onclick="ui.exportLeaderboard()" style="padding:6px 12px;background:#6b7280;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">📋 导出JSON</button>
+                        <button onclick="document.getElementById('import-file').click()" style="padding:6px 12px;background:#6b7280;color:white;border:none;border-radius:6px;cursor:pointer;font-size:12px;">📥 导入JSON</button>
+                        <input type="file" id="import-file" accept=".json" style="display:none" onchange="ui.importLeaderboard(this)">
+                    </div>
+                </div>`;
+                list.innerHTML = html;
+                this.showModal('leaderboard-modal');
+            }
+
+            async syncLeaderboard() {
+                const token = document.getElementById('gist-token')?.value.trim();
+                if (!token) { alert('请输入 GitHub Token'); return; }
+                try {
+                    await this.mpManager.leaderboard.syncToGist(token);
+                    alert('✅ 同步成功！排行榜已上传到 GitHub Gist');
+                } catch (err) { alert('❌ 同步失败: ' + err.message); }
+            }
+
+            exportLeaderboard() {
+                const data = this.mpManager.leaderboard.exportData();
+                navigator.clipboard?.writeText(data).then(() => alert('✅ 排行榜数据已复制到剪贴板')).catch(() => {
+                    const ta = document.createElement('textarea'); ta.value = data; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); alert('✅ 已复制');
+                });
+            }
+
+            importLeaderboard(input) {
+                const file = input?.files?.[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = e => {
+                    try { this.mpManager.leaderboard.importData(e.target.result); alert('✅ 导入成功！'); this.showLeaderboard(); }
+                    catch { alert('❌ 导入失败，文件格式错误'); }
+                };
+                reader.readAsText(file);
             }
 
             startTimer() {
@@ -1510,13 +1806,21 @@
                 gameState.isRunning = false;
                 if (gameState.syncInterval) {
                     clearInterval(gameState.syncInterval);
+                    gameState.syncInterval = null;
                 }
                 
                 document.getElementById('game-screen').style.display = 'none';
                 document.getElementById('start-screen').style.display = 'block';
                 document.getElementById('multiplayer-info').style.display = 'none';
+                document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
+
+                this.mpManager.destroy();
+                this.mpManager = new MultiplayerManager();
                 
                 this.selectedCareer = null;
+                this.nominatedThisGame = false;
+                gameState.room = null;
+                gameState.roomCode = null;
                 document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
                 document.getElementById('start-btn').disabled = true;
             }
