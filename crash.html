@@ -894,8 +894,7 @@
                     score: this.calculateScore()
                 };
             }
-        }
-        // ==================== 多人游戏管理器（WebRTC P2P via PeerJS）====================
+        }﻿        // ==================== 多人游戏管理器（WebRTC P2P via PeerJS v2）====================
         class MultiplayerManager {
             constructor() {
                 this.peer = null;
@@ -906,10 +905,295 @@
                 this.isHost = false;
                 this.onRoomState = null;
                 this.onConnectionChange = null;
+                this.onChat = null;
+                this._ready = false;
                 this.leaderboard = new this.LeaderboardManager();
             }
 
             // ===== 排行榜管理器 =====
+            LeaderboardManager = class {
+                constructor() {
+                    this.STORAGE_KEY = 'lifecash_leaderboard';
+                    this.WINNERS_KEY = 'lifecash_winners';
+                    this.GIST_ID_KEY = 'lifecash_gist_id';
+                }
+                addEntry(entry) {
+                    const list = this.getAll();
+                    list.push({ ...entry, timestamp: Date.now(), id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) });
+                    list.sort((a, b) => (b.score || 0) - (a.score || 0));
+                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list.slice(0, 100)));
+                    return list;
+                }
+                getAll() {
+                    try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+                }
+                getTop(n = 20) { return this.getAll().slice(0, n); }
+                nominateLifeWinner(playerData) {
+                    const winners = this.getLifeWinners();
+                    winners.push({ ...playerData, nominatedAt: new Date().toISOString(), id: 'w_' + Date.now() });
+                    winners.sort((a, b) => (b.score || 0) - (a.score || 0));
+                    localStorage.setItem(this.WINNERS_KEY, JSON.stringify(winners.slice(0, 50)));
+                    return winners;
+                }
+                getLifeWinners() {
+                    try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch { return []; }
+                }
+                getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
+                async syncToGist(token) {
+                    const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), updatedAt: new Date().toISOString() };
+                    const gistId = localStorage.getItem(this.GIST_ID_KEY);
+                    const body = { description: 'LifeCash Global Leaderboard', public: true, files: { 'leaderboard.json': { content: JSON.stringify(data, null, 2) } } };
+                    const url = gistId ? 'https://api.github.com/gists/' + gistId : 'https://api.github.com/gists';
+                    const method = gistId ? 'PATCH' : 'POST';
+                    const resp = await fetch(url, { method, headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    if (!resp.ok) throw new Error('GitHub API ' + resp.status);
+                    const result = await resp.json();
+                    if (!gistId && result.id) localStorage.setItem(this.GIST_ID_KEY, result.id);
+                    return result;
+                }
+                async loadFromGist(gistId) {
+                    const resp = await fetch('https://api.github.com/gists/' + gistId);
+                    if (!resp.ok) throw new Error('无法加载 Gist');
+                    const result = await resp.json();
+                    const file = result.files?.['leaderboard.json'];
+                    if (file) {
+                        const data = JSON.parse(file.content);
+                        if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                        if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                    }
+                    return result;
+                }
+                exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), exportedAt: new Date().toISOString() }, null, 2); }
+                importData(jsonStr) {
+                    const data = JSON.parse(jsonStr);
+                    if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                    if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                }
+            };
+
+            // ===== 初始化（返回Promise，等待Peer就绪）=====
+            async ensureReady() {
+                if (this._ready && this.peer && !this.peer.destroyed) return;
+                this.destroy();
+                return new Promise((resolve, reject) => {
+                    this.peer = new Peer(undefined, {
+                        debug: 2,
+                        config: {
+                            iceServers: [
+                                { urls: 'stun:stun.l.google.com:19302' },
+                                { urls: 'stun:stun1.l.google.com:19302' },
+                                { urls: 'stun:stun2.l.google.com:19302' },
+                                { urls: 'stun:stun.cloudflare.com:3478' },
+                                { urls: 'stun:stun.nextcloud.com:443' },
+                                { urls: 'stun:openrelay.metered.ca:80' },
+                                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+                            ]
+                        }
+                    });
+                    const timeout = setTimeout(() => {
+                        reject(new Error('PeerJS信令服务器连接超时(15s)，请检查网络'));
+                    }, 15000);
+                    this.peer.on('open', id => {
+                        clearTimeout(timeout);
+                        this.myPeerId = id;
+                        this._ready = true;
+                        this.onConnectionChange?.('online', 'P2P就绪 ID: ' + id);
+                        resolve();
+                    });
+                    this.peer.on('connection', conn => this._setupIncomingConn(conn));
+                    this.peer.on('error', err => {
+                        clearTimeout(timeout);
+                        console.error('PeerJS error:', err);
+                        this.onConnectionChange?.('error', 'P2P错误: ' + err.type);
+                        if (['server-error', 'network', 'unavailable-id', 'peer-unavailable'].includes(err.type)) {
+                            reject(new Error('P2P连接失败: ' + err.type + ' - 可能需要开启代理或刷新重试'));
+                        }
+                    });
+                    this.peer.on('disconnected', () => {
+                        this._ready = false;
+                        this.onConnectionChange?.('offline', 'P2P断开，尝试重连...');
+                        try { this.peer.reconnect(); } catch(e) {}
+                    });
+                });
+            }
+
+            _setupIncomingConn(conn) {
+                conn.on('open', () => {
+                    this.connections.set(conn.peer, conn);
+                    if (this.isHost && this.room) {
+                        conn.send({ type: 'room_state', room: JSON.parse(JSON.stringify(this.room)) });
+                    }
+                    this.onConnectionChange?.('online', '已连接 ' + this.connections.size + ' 个玩家');
+                });
+                conn.on('data', data => this._handleMessage(data, conn));
+                conn.on('close', () => {
+                    this.connections.delete(conn.peer);
+                    if (this.isHost && this.room) {
+                        this.room.players = this.room.players.filter(p => p.peerId !== conn.peer);
+                        this._broadcastRoom();
+                    }
+                    this.onConnectionChange?.(this.connections.size > 0 ? 'online' : 'offline', '在线: ' + (this.connections.size + 1));
+                });
+                conn.on('error', err => console.warn('Conn error:', err));
+            }
+
+            _handleMessage(data, conn) {
+                switch (data.type) {
+                    case 'room_state':
+                        this.room = data.room;
+                        this.onRoomState?.(this.room);
+                        break;
+                    case 'join_request':
+                        if (this.isHost && this.room) {
+                            const newPlayer = {
+                                id: data.playerId, peerId: conn.peer,
+                                name: data.playerName || '玩家', careerType: data.careerType || 'worker',
+                                isHost: false, score: 0, wealth: 0, level: 1,
+                                status: 'waiting', finished: false
+                            };
+                            if (!this.room.players.find(p => p.id === newPlayer.id)) {
+                                this.room.players.push(newPlayer);
+                            }
+                            this._broadcastRoom();
+                            conn.send({ type: 'join_ack', playerId: data.playerId, room: JSON.parse(JSON.stringify(this.room)) });
+                        }
+                        break;
+                    case 'join_ack':
+                        if (!this.isHost) {
+                            this.room = data.room;
+                            this.onRoomState?.(this.room);
+                        }
+                        break;
+                    case 'update_player':
+                        if (this.isHost && this.room) {
+                            const p = this.room.players.find(pl => pl.id === data.playerId);
+                            if (p) { Object.assign(p, data.patch || {}); this._broadcastRoom(); }
+                        }
+                        break;
+                    case 'start_room':
+                        if (this.isHost && this.room) { this.room.status = 'playing'; this._broadcastRoom(); }
+                        break;
+                    case 'final_score':
+                        if (this.room) {
+                            const p = this.room.players.find(pl => pl.id === data.playerId);
+                            if (p) Object.assign(p, { score: data.score, wealth: data.wealth, level: data.level, finished: true, status: 'finished' });
+                            if (this.isHost) { if (this.room.players.every(pl => pl.finished)) this.room.status = 'finished'; this._broadcastRoom(); }
+                        }
+                        break;
+                    case 'chat':
+                        if (this.isHost) this._broadcast(data);
+                        this.onChat?.(data.playerId, data.playerName, data.message);
+                        break;
+                    case 'request_state':
+                        if (this.isHost && this.room) conn.send({ type: 'room_state', room: JSON.parse(JSON.stringify(this.room)) });
+                        break;
+                }
+            }
+
+            _broadcast(msg, excludePeerId = null) {
+                const data = typeof msg === 'string' ? msg : JSON.parse(JSON.stringify(msg));
+                for (const [peerId, conn] of this.connections) {
+                    if (peerId !== excludePeerId && conn.open) {
+                        try { conn.send(data); } catch(e) { console.warn('Broadcast error:', e); }
+                    }
+                }
+            }
+            _broadcastRoom() {
+                if (!this.room) return;
+                this._broadcast({ type: 'room_state', room: JSON.parse(JSON.stringify(this.room)) });
+                this.onRoomState?.(this.room);
+            }
+
+            async createRoom(hostName, careerType) {
+                await this.ensureReady();
+                this.isHost = true;
+                this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                this.room = {
+                    code: this.myPeerId, host: hostName, hostPeerId: this.myPeerId,
+                    players: [{ id: this.myPlayerId, peerId: this.myPeerId, name: hostName, careerType: careerType || 'worker', isHost: true, score: 0, wealth: 0, level: 1, status: 'waiting', finished: false }],
+                    status: 'waiting', createdAt: Date.now(), settings: { timeLimit: 30 }
+                };
+                this.onRoomState?.(this.room);
+                return this.room;
+            }
+
+            async joinRoom(hostPeerId, playerName, careerType) {
+                await this.ensureReady();
+                this.isHost = false;
+                this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                return new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        reject(new Error('连接超时(15s)。可能原因：1.对方房间已关闭 2.网络不通(需STUN/TURN穿透) 3.Peer ID错误'));
+                    }, 15000);
+                    const conn = this.peer.connect(hostPeerId, { reliable: true });
+                    conn.on('open', () => {
+                        clearTimeout(timeout);
+                        this.connections.set(conn.peer, conn);
+                        this.onConnectionChange?.('online', '已连接到房主');
+                        conn.on('data', data => this._handleMessage(data, conn));
+                        conn.on('close', () => { this.connections.delete(conn.peer); this.onConnectionChange?.('offline', '与房主断开'); });
+                        conn.on('error', err => console.warn('Host conn error:', err));
+                        conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName: playerName, careerType: careerType || 'worker' });
+                        let acked = false;
+                        const ackHandler = (msgData) => {
+                            if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
+                                if (msgData.room) {
+                                    acked = true;
+                                    this.room = msgData.room;
+                                    this.onRoomState?.(this.room);
+                                    resolve({ success: true, room: this.room });
+                                }
+                            }
+                        };
+                        conn.on('data', ackHandler);
+                    });
+                    conn.on('error', err => { clearTimeout(timeout); reject(new Error('连接失败: ' + (err.type || err.message || err))); });
+                });
+            }
+
+            updateMyState(patch) {
+                if (!this.room || !this.myPlayerId) return;
+                const p = this.room.players.find(pl => pl.id === this.myPlayerId);
+                if (p) Object.assign(p, patch);
+                if (this.isHost) { this._broadcastRoom(); }
+                else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'update_player', playerId: this.myPlayerId, patch }); } catch(e) {} }
+                this.onRoomState?.(this.room);
+            }
+            submitFinalScore(score, wealth, level) {
+                this.updateMyState({ score, wealth, level, finished: true, status: 'finished' });
+                if (!this.isHost) { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'final_score', playerId: this.myPlayerId, score, wealth, level }); } catch(e) {} }
+            }
+            startRoom() {
+                if (!this.room) return;
+                this.room.status = 'playing';
+                if (this.isHost) this._broadcastRoom();
+                else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'start_room' }); } catch(e) {} }
+            }
+            getRankings() {
+                if (!this.room) return [];
+                return [...this.room.players].sort((a, b) => (b.score || 0) - (a.score || 0) || (b.wealth || 0) - (a.wealth || 0));
+            }
+            getShareLink() {
+                if (!this.myPeerId) return '';
+                return window.location.href.split('#')[0].split('?')[0] + '?join=' + this.myPeerId;
+            }
+            checkUrlInvite() {
+                return new URLSearchParams(window.location.search).get('join');
+            }
+            sendChat(message) {
+                const msg = { type: 'chat', playerId: this.myPlayerId, playerName: gameState.playerName, message, timestamp: Date.now() };
+                if (this.isHost) { this._broadcast(msg); this.onChat?.(this.myPlayerId, gameState.playerName, message); }
+                else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send(msg); } catch(e) {} }
+            }
+            destroy() {
+                for (const conn of this.connections.values()) try { conn.close(); } catch {}
+                this.connections.clear();
+                if (this.peer) try { this.peer.destroy(); } catch {}
+                this.peer = null; this.room = null; this.myPeerId = null; this._ready = false;
+            }
+        }            // ===== 排行榜管理器 =====
             LeaderboardManager = class {
                 constructor() {
                     this.STORAGE_KEY = 'lifecash_leaderboard';
@@ -1228,56 +1512,57 @@
                 document.getElementById('start-btn').disabled = !canStart;
             }
 
-            createRoom() {
+            async createRoom() {
                 const playerName = document.getElementById('player-name').value.trim() || '房主';
-                const room = this.mpManager.createRoom(playerName, this.selectedCareer);
-                
-                gameState.room = room;
-                gameState.roomCode = room.code;
-                gameState.playerName = playerName;
-                gameState.isHost = true;
-
-                // 设置回调
-                this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
-                this.mpManager.onConnectionChange = (state, msg) => {
-                    const el = document.getElementById('room-status');
-                    if (el && state === 'online') el.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
-                };
-
-                const shareLink = this.mpManager.getShareLink();
-                document.getElementById('room-status').innerHTML = 
-                    `✅ 房间创建成功！房间号: <strong>${room.code}</strong><br>` +
-                    `<small>分享链接给朋友（需同时打开页面）: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all">${shareLink}</code></small><br>` +
-                    `<small>或让对方输入Peer ID: <strong>${this.mpManager.myPeerId || '等待初始化...'}</strong></small>`;
-                this.updatePlayerList(room);
-                this.checkCanStart();
+                const statusEl = document.getElementById('room-status');
+                statusEl.innerHTML = '⏳ 正在连接信令服务器...';
+                try {
+                    const room = await this.mpManager.createRoom(playerName, this.selectedCareer);
+                    gameState.room = room;
+                    gameState.roomCode = room.code;
+                    gameState.playerName = playerName;
+                    gameState.isHost = true;
+                    this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
+                    this.mpManager.onConnectionChange = (state, msg) => {
+                        if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
+                        else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${msg}</small>`;
+                    };
+                    const shareLink = this.mpManager.getShareLink();
+                    statusEl.innerHTML = `✅ 房间创建成功！<br>` +
+                        `<small>你的Peer ID: <strong>${this.mpManager.myPeerId}</strong></small><br>` +
+                        `<small>分享给朋友: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:11px">${shareLink}</code></small><br>` +
+                        `<small style="color:#888">朋友打开链接或输入Peer ID即可加入（需要双方网络可连通）</small>`;
+                    this.updatePlayerList(room);
+                    this.checkCanStart();
+                } catch (err) {
+                    statusEl.innerHTML = `❌ 创建失败: ${err.message}<br><small style="color:#888">可能需要科学上网或刷新重试</small>`;
+                }
             }
 
             async joinRoom() {
                 const playerName = document.getElementById('player-name').value.trim() || '玩家';
-                const hostPeerId = document.getElementById('room-code').value.trim();
-                
-                if (!hostPeerId) {
-                    alert('请输入房间号（Peer ID）');
-                    return;
+                let hostPeerId = document.getElementById('room-code').value.trim();
+                // 支持粘贴完整URL，自动提取Peer ID
+                if (hostPeerId.includes('?join=')) {
+                    const m = hostPeerId.match(/[?&]join=([^&]+)/);
+                    if (m) hostPeerId = decodeURIComponent(m[1]);
                 }
-
-                document.getElementById('room-status').innerHTML = '⏳ 正在连接...';
-                
+                if (hostPeerId.includes('/')) hostPeerId = hostPeerId.split('/').pop().split('?')[0];
+                if (!hostPeerId) { alert('请输入房间的 Peer ID 或邀请链接'); return; }
+                const statusEl = document.getElementById('room-status');
+                statusEl.innerHTML = '⏳ 正在连接信令服务器...';
                 try {
                     const result = await this.mpManager.joinRoom(hostPeerId, playerName, this.selectedCareer);
                     gameState.room = result.room;
                     gameState.roomCode = result.room.code;
                     gameState.playerName = playerName;
                     gameState.isHost = false;
-
                     this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
-
-                    document.getElementById('room-status').innerHTML = `✅ 已加入房间`;
+                    statusEl.innerHTML = `✅ 已加入房间，等待房主开始...`;
                     this.updatePlayerList(result.room);
                     this.checkCanStart();
                 } catch (err) {
-                    document.getElementById('room-status').innerHTML = `❌ 加入失败: ${err.message}`;
+                    statusEl.innerHTML = `❌ 加入失败: ${err.message}<br><small style="color:#888">提示：双方都需要能访问互联网，如果使用代理请确保WebRTC流量不被阻断</small>`;
                 }
             }
 
