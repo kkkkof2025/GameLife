@@ -894,7 +894,9 @@
                     score: this.calculateScore()
                 };
             }
-        }﻿        // ==================== 多人游戏管理器（WebRTC P2P via PeerJS v2）====================
+        }
+
+        // ==================== 多人游戏管理器（WebRTC P2P via PeerJS v2）====================
         class MultiplayerManager {
             constructor() {
                 this.peer = null;
@@ -904,6 +906,7 @@
                 this.myPlayerId = null;
                 this.isHost = false;
                 this.onRoomState = null;
+                this.onRoomStarted = null;
                 this.onConnectionChange = null;
                 this.onChat = null;
                 this._ready = false;
@@ -1041,10 +1044,15 @@
 
             _handleMessage(data, conn) {
                 switch (data.type) {
-                    case 'room_state':
+                    case 'room_state': {
+                        const wasPlaying = this.room?.status === 'playing';
                         this.room = data.room;
                         this.onRoomState?.(this.room);
+                        if (!this.isHost && !wasPlaying && this.room?.status === 'playing') {
+                            this.onRoomStarted?.(this.room);
+                        }
                         break;
+                    }
                     case 'join_request':
                         if (this.isHost && this.room) {
                             const newPlayer = {
@@ -1062,8 +1070,12 @@
                         break;
                     case 'join_ack':
                         if (!this.isHost) {
+                            const wasPlaying = this.room?.status === 'playing';
                             this.room = data.room;
                             this.onRoomState?.(this.room);
+                            if (!wasPlaying && this.room?.status === 'playing') {
+                                this.onRoomStarted?.(this.room);
+                            }
                         }
                         break;
                     case 'update_player':
@@ -1073,7 +1085,12 @@
                         }
                         break;
                     case 'start_room':
-                        if (this.isHost && this.room) { this.room.status = 'playing'; this._broadcastRoom(); }
+                        if (!this.isHost) {
+                            if (data.room) this.room = data.room;
+                            else if (this.room) this.room.status = 'playing';
+                            this.onRoomState?.(this.room);
+                            this.onRoomStarted?.(this.room);
+                        }
                         break;
                     case 'final_score':
                         if (this.room) {
@@ -1135,7 +1152,6 @@
                         conn.on('data', data => this._handleMessage(data, conn));
                         conn.on('close', () => { this.connections.delete(conn.peer); this.onConnectionChange?.('offline', '与房主断开'); });
                         conn.on('error', err => console.warn('Host conn error:', err));
-                        conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName: playerName, careerType: careerType || 'worker' });
                         let acked = false;
                         const ackHandler = (msgData) => {
                             if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
@@ -1148,6 +1164,7 @@
                             }
                         };
                         conn.on('data', ackHandler);
+                        conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName: playerName, careerType: careerType || 'worker' });
                     });
                     conn.on('error', err => { clearTimeout(timeout); reject(new Error('连接失败: ' + (err.type || err.message || err))); });
                 });
@@ -1166,10 +1183,12 @@
                 if (!this.isHost) { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'final_score', playerId: this.myPlayerId, score, wealth, level }); } catch(e) {} }
             }
             startRoom() {
-                if (!this.room) return;
+                if (!this.room || !this.isHost) return false;
                 this.room.status = 'playing';
-                if (this.isHost) this._broadcastRoom();
-                else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'start_room' }); } catch(e) {} }
+                this.room.startedAt = Date.now();
+                this._broadcast({ type: 'start_room', room: JSON.parse(JSON.stringify(this.room)) });
+                this.onRoomState?.(this.room);
+                return true;
             }
             getRankings() {
                 if (!this.room) return [];
@@ -1203,6 +1222,45 @@
                 this.selectedCareer = null;
                 this.mpManager = new MultiplayerManager();
                 this.nominatedThisGame = false;
+            }
+
+            bindMultiplayerCallbacks(statusEl = null) {
+                this.mpManager.onRoomState = (room) => {
+                    gameState.room = room;
+                    this.updatePlayerList(room);
+                    this.renderRankings();
+                    this.checkCanStart();
+                };
+                this.mpManager.onRoomStarted = (room) => {
+                    if (room) gameState.room = room;
+                    if (gameState.mode !== 'multiplayer' || gameState.isRunning) return;
+                    this.ensureSelectedCareerFromRoom();
+                    this.beginGame();
+                };
+                this.mpManager.onConnectionChange = (state, msg) => {
+                    if (!statusEl) return;
+                    if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
+                    else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${msg}</small>`;
+                    else if (state === 'offline') statusEl.innerHTML += `<br><small style="color:#888">📡 ${msg}</small>`;
+                };
+            }
+
+            getMyRoomPlayer() {
+                return this.mpManager.room?.players?.find(p => p.id === this.mpManager.myPlayerId) || null;
+            }
+
+            ensureSelectedCareerFromRoom() {
+                const roomPlayer = this.getMyRoomPlayer();
+                let type = this.selectedCareer || roomPlayer?.careerType || 'worker';
+                if (!CONFIG.careers[type]) type = 'worker';
+                this.selectedCareer = type;
+                gameState.selectedCareer = type;
+                document.querySelectorAll('.career-card').forEach(card => {
+                    card.classList.toggle('selected', card.dataset.type === type);
+                });
+                if (roomPlayer && roomPlayer.careerType !== type) {
+                    this.mpManager.updateMyState({ careerType: type });
+                }
             }
 
             initStartScreen() {
@@ -1272,15 +1330,37 @@
             selectCareer(type) {
                 this.selectedCareer = type;
                 document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
-                document.querySelector(`.career-card[data-type="${type}"]`).classList.add('selected');
+                document.querySelector(`.career-card[data-type="${type}"]`)?.classList.add('selected');
                 gameState.selectedCareer = type;
+                if (gameState.mode === 'multiplayer' && this.mpManager.room) {
+                    this.mpManager.updateMyState({ careerType: type });
+                }
                 this.checkCanStart();
             }
 
             checkCanStart() {
-                const canStart = gameState.selectedCareer && 
-                    (gameState.mode !== 'multiplayer' || gameState.room);
-                document.getElementById('start-btn').disabled = !canStart;
+                const startBtn = document.getElementById('start-btn');
+                if (!startBtn) return;
+                const room = gameState.room || this.mpManager.room;
+                let canStart = !!gameState.selectedCareer;
+                let label = '开始人生旅程';
+
+                if (gameState.mode === 'multiplayer') {
+                    if (!room) {
+                        canStart = false;
+                        label = '先创建或加入房间';
+                    } else if (gameState.isHost) {
+                        label = room.status === 'playing' ? '进入游戏' : '开始多人游戏';
+                    } else if (room.status === 'playing') {
+                        label = '进入游戏';
+                    } else {
+                        canStart = false;
+                        label = '等待房主开始';
+                    }
+                }
+
+                startBtn.disabled = !canStart;
+                startBtn.textContent = label;
             }
 
             async createRoom() {
@@ -1288,21 +1368,17 @@
                 const statusEl = document.getElementById('room-status');
                 statusEl.innerHTML = '⏳ 正在连接信令服务器...';
                 try {
+                    this.bindMultiplayerCallbacks(statusEl);
+                    gameState.playerName = playerName;
+                    gameState.isHost = true;
                     const room = await this.mpManager.createRoom(playerName, this.selectedCareer);
                     gameState.room = room;
                     gameState.roomCode = room.code;
-                    gameState.playerName = playerName;
-                    gameState.isHost = true;
-                    this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
-                    this.mpManager.onConnectionChange = (state, msg) => {
-                        if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
-                        else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${msg}</small>`;
-                    };
                     const shareLink = this.mpManager.getShareLink();
                     statusEl.innerHTML = `✅ 房间创建成功！<br>` +
                         `<small>你的Peer ID: <strong>${this.mpManager.myPeerId}</strong></small><br>` +
                         `<small>分享给朋友: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:11px">${shareLink}</code></small><br>` +
-                        `<small style="color:#888">朋友打开链接或输入Peer ID即可加入（需要双方网络可连通）</small>`;
+                        `<small style="color:#888">朋友打开同一部署地址的链接，或手动输入Peer ID加入（双方需能访问PeerJS信令且WebRTC未被网络阻断）</small>`;
                     this.updatePlayerList(room);
                     this.checkCanStart();
                 } catch (err) {
@@ -1314,7 +1390,7 @@
                 const playerName = document.getElementById('player-name').value.trim() || '玩家';
                 let hostPeerId = document.getElementById('room-code').value.trim();
                 // 支持粘贴完整URL，自动提取Peer ID
-                if (hostPeerId.includes('?join=')) {
+                if (hostPeerId.includes('join=')) {
                     const m = hostPeerId.match(/[?&]join=([^&]+)/);
                     if (m) hostPeerId = decodeURIComponent(m[1]);
                 }
@@ -1323,12 +1399,12 @@
                 const statusEl = document.getElementById('room-status');
                 statusEl.innerHTML = '⏳ 正在连接信令服务器...';
                 try {
+                    this.bindMultiplayerCallbacks(statusEl);
+                    gameState.playerName = playerName;
+                    gameState.isHost = false;
                     const result = await this.mpManager.joinRoom(hostPeerId, playerName, this.selectedCareer);
                     gameState.room = result.room;
                     gameState.roomCode = result.room.code;
-                    gameState.playerName = playerName;
-                    gameState.isHost = false;
-                    this.mpManager.onRoomState = (r) => { this.updatePlayerList(r); this.renderRankings(); };
                     statusEl.innerHTML = `✅ 已加入房间，等待房主开始...`;
                     this.updatePlayerList(result.room);
                     this.checkCanStart();
@@ -1339,14 +1415,47 @@
 
             updatePlayerList(room) {
                 const list = document.getElementById('player-list');
+                if (!list || !room) return;
                 list.innerHTML = room.players.map(p => 
-                    `<span class="player-tag">${p.isHost ? '👑' : '👤'} ${p.name}</span>`
+                    {
+                        const career = CONFIG.careers[p.careerType] || CONFIG.careers.worker;
+                        const status = p.finished ? '完成' : (room.status === 'playing' || p.status === 'playing' ? '游戏中' : '等待');
+                        return `<span class="player-tag">${p.isHost ? '👑' : '👤'} ${p.name} · ${career.emoji}${career.name} · ${status}</span>`;
+                    }
                 ).join('');
             }
 
             startGame() {
                 if (!gameState.selectedCareer) return;
-                
+
+                if (gameState.mode === 'multiplayer') {
+                    gameState.room = gameState.room || this.mpManager.room;
+                    if (!gameState.room) {
+                        alert('请先创建或加入房间');
+                        return;
+                    }
+                    if (gameState.isHost) {
+                        const started = this.mpManager.startRoom();
+                        if (!started) {
+                            alert('只有房主可以开始多人房间');
+                            return;
+                        }
+                        gameState.room = this.mpManager.room;
+                    } else if (gameState.room.status !== 'playing') {
+                        alert('请等待房主开始游戏');
+                        this.checkCanStart();
+                        return;
+                    }
+                }
+
+                this.beginGame();
+            }
+
+            beginGame() {
+                if (gameState.isRunning) return;
+                if (!gameState.selectedCareer) this.ensureSelectedCareerFromRoom();
+                if (!gameState.selectedCareer) return;
+
                 gameState.player = new Player(gameState.selectedCareer, gameState.playerName || '玩家');
                 gameState.day = 1;
                 gameState.startTime = Date.now();
@@ -1370,21 +1479,27 @@
                 }
             }
 
+            pushMultiplayerState() {
+                if (gameState.mode !== 'multiplayer' || !gameState.player || !this.mpManager.room) return;
+                const p = gameState.player;
+                this.mpManager.updateMyState({
+                    score: p.calculateScore(),
+                    wealth: p.money + p.getTotalAssets(),
+                    level: p.level,
+                    day: gameState.day,
+                    money: p.money,
+                    status: p.status === 'normal' ? 'playing' : p.status,
+                    careerType: p.careerType
+                });
+                this.renderRankings();
+            }
+
             startMultiplayerSync() {
                 if (gameState.syncInterval) clearInterval(gameState.syncInterval);
+                this.pushMultiplayerState();
                 gameState.syncInterval = setInterval(() => {
                     if (!gameState.isRunning) return;
-                    const p = gameState.player;
-                    this.mpManager.updateMyState({
-                        score: p.calculateScore(),
-                        wealth: p.money + p.getTotalAssets(),
-                        level: p.level,
-                        day: gameState.day,
-                        money: p.money,
-                        status: p.status,
-                        careerType: p.careerType
-                    });
-                    this.renderRankings();
+                    this.pushMultiplayerState();
                 }, 3000);
             }
 
@@ -1689,6 +1804,8 @@
             startTimer() {
                 gameState.timeLimit = gameState.mode === 'multiplayer' ? 30 : 
                     parseInt(document.getElementById('time-limit').value);
+
+                document.getElementById('timer')?.remove();
                 
                 const timerDiv = document.createElement('div');
                 timerDiv.id = 'timer';
@@ -1868,6 +1985,7 @@
                 document.getElementById('game-screen').style.display = 'none';
                 document.getElementById('start-screen').style.display = 'block';
                 document.getElementById('multiplayer-info').style.display = 'none';
+                document.getElementById('timer')?.remove();
                 document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 
                 this.mpManager.destroy();
@@ -1875,10 +1993,13 @@
                 
                 this.selectedCareer = null;
                 this.nominatedThisGame = false;
+                gameState.selectedCareer = null;
                 gameState.room = null;
                 gameState.roomCode = null;
+                gameState.playerName = null;
+                gameState.isHost = false;
                 document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
-                document.getElementById('start-btn').disabled = true;
+                this.checkCanStart();
             }
         }
 

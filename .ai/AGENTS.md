@@ -1,14 +1,14 @@
 # Agent工作规范
 
 ## 工作目录
-`C:\Users\sznrk\.qclaw\workspace-agent-b229658a`
 `X:\c\ai\GameLife` - 项目根目录
 
 ## 当前项目: LifeCash金融沙盘模拟游戏
 - **需求目录**: X:\c\ai\GameLife\需求收集
 - **设计目录**: X:\c\ai\GameLife\概要设计
 - **详细设计**: X:\c\ai\GameLife\详细设计
-- **代码目录**: X:\c\ai\GameLife\项目代码
+- **入口文件**: X:\c\ai\GameLife\index.html
+- **主游戏文件**: X:\c\ai\GameLife\crash.html
 - **AI配置**: X:\c\ai\GameLife\.ai
 
 ## 项目工作流程
@@ -20,10 +20,11 @@
 1. **结果导向**: 完成目标，不要一直问问问
 2. **自我检查**: 每步完成后检查是否达标，没达到继续完善
 3. **持续迭代**: 直到用户满意为止
+4. **记录同步**: 改动阶段性功能后同步 README.md 和 .ai/MEMORY.md，避免进度丢失或被后续 AI 按旧状态继续开发
 
 ## 定时任务
 - 设置监控cron job确保任务完成
 - 每10分钟检查任务状态
 
 ---
-*最后更新: 2026-04-27*
+*最后更新: 2026-05-22*

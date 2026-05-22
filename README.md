@@ -21,8 +21,10 @@ https://yourusername.github.io/lifecash/
 ### 本地运行
 
 1. 下载或克隆本项目
-2. 直接用浏览器打开 `index.html` 文件
+2. 单机游玩可直接用浏览器打开 `index.html` 文件
 3. 选择职业，开始游戏
+
+多人联机建议让所有玩家访问同一个部署地址（例如 GitHub Pages 或同一台机器启动的静态 HTTP 服务）。如果直接分享本机 `file://` 路径，另一台设备通常无法打开同一文件路径，只能手动输入 Peer ID。
 
 ## 🎯 游戏功能
 
@@ -42,13 +44,13 @@ https://yourusername.github.io/lifecash/
 
 ### 👥 多人联机（WebRTC P2P）
 
-基于 **PeerJS + WebRTC** 实现点对点直连，**无需后端服务器**，可直接部署到 GitHub Pages。
+基于 **PeerJS + WebRTC** 实现点对点直连，项目本身**无需自建业务后端**，可直接部署到 GitHub Pages。
 
 **玩法流程：**
 1. 选择多人模式 → 输入昵称 → 点击"创建房间"
 2. 复制生成的 **邀请链接** 或 **Peer ID** 发给朋友
 3. 朋友打开链接（或输入Peer ID）→ 自动加入房间
-4. 房主点击"开始人生旅程"，所有人同时开始游戏
+4. 房主点击"开始多人游戏"，所有已加入玩家自动进入游戏
 5. 游戏中实时同步排行榜，结束后可提名人生赢家
 
 **技术原理：**
@@ -56,6 +58,11 @@ https://yourusername.github.io/lifecash/
 - 房主作为 Host，其他玩家通过 PeerJS 信令服务器建立 P2P 连接
 - 游戏状态通过 DataChannel 直接在浏览器之间传输
 - PeerJS 免费信令服务器: `0.peerjs.com`
+
+**联机限制与可行方案：**
+- 当前方案适合 GitHub Pages 这类纯静态托管，但仍依赖 PeerJS 公共信令服务和 WebRTC 的 STUN/TURN 穿透。
+- 如果两台浏览器无法互联，优先确认双方能访问同一个页面地址、能访问 `0.peerjs.com`，并且网络没有禁用 WebRTC UDP/TCP 直连。
+- 更稳定的正式方案是保留静态前端，同时自建 PeerServer 信令服务，并配置可靠 TURN 服务；这样不需要重写游戏逻辑，只需要把 PeerJS 连接配置改成自己的服务地址。
 
 ### 职业系统
 
@@ -102,6 +109,7 @@ https://yourusername.github.io/lifecash/
 - [x] 单人畅玩模式
 - [x] 限时挑战模式
 - [x] 多人游戏模式（WebRTC P2P，无需服务器）
+- [x] 房主开始广播，客端自动开局
 - [x] 排行榜系统（本地存储 + GitHub Gist 同步）
 - [x] 人生赢家提名排行榜
 - [x] 6种职业系统
@@ -116,6 +124,7 @@ https://yourusername.github.io/lifecash/
 ### 待开发 📋
 
 - [ ] 断线重连机制
+- [ ] 自建 PeerServer/TURN 配置入口
 - [ ] 观战系统
 - [ ] 教程引导
 - [ ] 更多职业/投资品种
@@ -136,8 +145,13 @@ https://yourusername.github.io/lifecash/
 
 ```
 lifecash/
-├── index.html          # 主游戏文件（包含HTML/CSS/JS，约80KB）
+├── index.html          # 入口重定向，保留查询参数并跳转到 crash.html
+├── crash.html          # 主游戏文件（HTML/CSS/JS 单文件实现）
 ├── README.md           # 项目说明文档
+├── .ai/                # AI协作记忆与项目进度
+├── 需求收集/           # 需求文档
+├── 概要设计/           # 概要设计文档
+├── 详细设计/           # 详细设计文档
 └── LICENSE             # MIT 开源协议
 ```
 
@@ -148,7 +162,7 @@ lifecash/
 3. Source 选择 `main` branch
 4. 访问 `https://yourusername.github.io/lifecash/`
 
-无需后端，纯静态部署即可使用全部功能（包括多人联机）。
+无需自建业务后端，纯静态部署即可使用游戏功能；多人联机仍取决于 PeerJS 信令服务和玩家所在网络的 WebRTC 连通性。
 
 ## 🔗 排行榜同步说明
 
@@ -170,6 +184,12 @@ lifecash/
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.0.1 (2026-05-22)
+- 🐛 修复多人房间开始流程：房主开始后会广播到客端，客端自动进入游戏
+- 🐛 修复非房主可误点本地开始的问题
+- 🐛 修复加入房间确认监听的竞态问题
+- 📝 更新 README 与 `.ai` 进度，明确 `index.html`/`crash.html` 文件结构和 P2P 联机限制
 
 ### v2.0.0 (2026-05-21)
 - ✨ 多人模式重构：从 localStorage 升级为 WebRTC P2P 直连
