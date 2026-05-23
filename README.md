@@ -62,7 +62,9 @@ https://yourusername.github.io/lifecash/
 **联机限制与可行方案：**
 - 当前方案适合 GitHub Pages 这类纯静态托管，但仍依赖 PeerJS 公共信令服务和 WebRTC 的 STUN/TURN 穿透。
 - 如果两台浏览器无法互联，优先确认双方能访问同一个页面地址、能访问 `0.peerjs.com`，并且网络没有禁用 WebRTC UDP/TCP 直连。
-- 更稳定的正式方案是保留静态前端，同时自建 PeerServer 信令服务，并配置可靠 TURN 服务；这样不需要重写游戏逻辑，只需要把 PeerJS 连接配置改成自己的服务地址。
+- 页面内置联机诊断面板，可查看页面环境、信令服务、Peer ID、房间状态、连接数和最近错误。
+- 高级联机配置支持填写自建 PeerServer，双方使用同一套配置即可在 GitHub Pages 前端上连接自己的信令服务。
+- 更稳定的正式方案是保留静态前端，同时自建 PeerServer 信令服务，并配置可靠 TURN 服务；这样不需要重写游戏逻辑。
 
 ### 职业系统
 
@@ -108,8 +110,11 @@ https://yourusername.github.io/lifecash/
 
 - [x] 单人畅玩模式
 - [x] 限时挑战模式
-- [x] 多人游戏模式（WebRTC P2P，无需服务器）
+- [x] 多人游戏模式（WebRTC P2P，无需自建业务后端）
 - [x] 房主开始广播，客端自动开局
+- [x] 联机诊断面板（页面环境、信令、Peer ID、连接数、最近错误）
+- [x] 自定义 PeerServer 配置入口（适配 GitHub Pages 静态部署）
+- [x] 邀请链接和 Peer ID 一键复制
 - [x] 排行榜系统（本地存储 + GitHub Gist 同步）
 - [x] 人生赢家提名排行榜
 - [x] 6种职业系统
@@ -124,7 +129,7 @@ https://yourusername.github.io/lifecash/
 ### 待开发 📋
 
 - [ ] 断线重连机制
-- [ ] 自建 PeerServer/TURN 配置入口
+- [ ] 自定义 TURN 服务器配置入口
 - [ ] 观战系统
 - [ ] 教程引导
 - [ ] 更多职业/投资品种
@@ -184,6 +189,12 @@ lifecash/
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.0.2 (2026-05-23)
+- ✨ 新增联机诊断面板，方便在 GitHub Pages 环境排查 PeerJS/WebRTC 问题
+- ✨ 新增自定义 PeerServer 配置入口，支持纯静态前端连接自建信令服务
+- ✨ 新增邀请链接和 Peer ID 一键复制
+- 🐛 创建/加入房间时锁定按钮，避免重复点击造成状态错乱
 
 ### v2.0.1 (2026-05-22)
 - 🐛 修复多人房间开始流程：房主开始后会广播到客端，客端自动进入游戏

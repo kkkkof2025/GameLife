@@ -195,6 +195,95 @@
             border-radius: 20px;
             font-size: 14px;
         }
+
+        .room-tools {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 8px 0 12px;
+        }
+
+        .room-tools button, #btn-save-peer-config {
+            padding: 8px 14px;
+            font-size: 13px;
+            background: #455a64;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .room-tools button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        #mp-diagnostics {
+            margin-top: 12px;
+            padding: 12px;
+            background: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            text-align: left;
+            font-size: 12px;
+            color: #455a64;
+        }
+
+        #mp-diagnostics .diag-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px 12px;
+        }
+
+        #mp-diagnostics code {
+            word-break: break-all;
+            background: #f5f7fa;
+            padding: 1px 4px;
+            border-radius: 4px;
+        }
+
+        #mp-advanced {
+            margin-top: 10px;
+            text-align: left;
+            font-size: 13px;
+            color: #555;
+        }
+
+        #mp-advanced summary {
+            cursor: pointer;
+            color: #37474f;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .peer-config-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+            align-items: end;
+        }
+
+        .peer-config-grid label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+        }
+
+        .peer-config-grid input {
+            padding: 8px 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 6px;
+            min-width: 0;
+        }
+
+        .peer-config-grid .checkbox-label {
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+        }
         
         /* 游戏界面 */
         #game-screen {
@@ -476,6 +565,11 @@
             #actions { grid-template-columns: repeat(2, 1fr); }
             #btn-end-day { grid-column: span 2; }
             .mode-buttons { flex-direction: column; align-items: center; }
+            .room-input { flex-direction: column; }
+            .room-input input { width: 100%; }
+            #room-code { width: 100% !important; }
+            #mp-diagnostics .diag-grid { grid-template-columns: 1fr; }
+            .peer-config-grid { grid-template-columns: 1fr; }
         }
     </style>
     <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
@@ -519,7 +613,7 @@
             <!-- 多人房间设置 -->
             <div id="multiplayer-section">
                 <h3>🏠 多人游戏（P2P直连）</h3>
-                <p style="font-size:13px;color:#666;margin-bottom:12px;">基于 WebRTC 点对点连接，无需服务器。创建房间后将链接或Peer ID发给朋友。</p>
+                <p style="font-size:13px;color:#666;margin-bottom:12px;">基于 WebRTC 点对点连接，无需自建业务服务器。创建房间后将链接或 Peer ID 发给朋友。</p>
                 <div class="room-input">
                     <input type="text" id="player-name" placeholder="输入你的昵称" maxlength="10">
                     <button id="btn-create-room">🏠 创建房间</button>
@@ -528,8 +622,41 @@
                     <input type="text" id="room-code" placeholder="输入房间Peer ID或粘贴邀请链接" style="width:300px;">
                     <button id="btn-join-room">🚪 加入房间</button>
                 </div>
+                <div class="room-tools">
+                    <button id="btn-copy-invite" disabled>复制邀请链接</button>
+                    <button id="btn-copy-peer" disabled>复制 Peer ID</button>
+                    <button id="btn-reset-p2p">重置连接</button>
+                </div>
                 <div id="room-status"></div>
                 <div id="player-list"></div>
+                <details id="mp-advanced">
+                    <summary>高级联机配置</summary>
+                    <div class="peer-config-grid">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="peer-custom-enabled">
+                            使用自定义 PeerServer
+                        </label>
+                        <label>
+                            Host
+                            <input type="text" id="peer-host" placeholder="peer.example.com">
+                        </label>
+                        <label>
+                            Port
+                            <input type="number" id="peer-port" min="1" max="65535" placeholder="443">
+                        </label>
+                        <label>
+                            Path
+                            <input type="text" id="peer-path" placeholder="/peerjs">
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="peer-secure" checked>
+                            secure
+                        </label>
+                        <button id="btn-save-peer-config" type="button">保存配置</button>
+                    </div>
+                    <p style="margin-top:8px;color:#777;">GitHub Pages 只托管前端；公共信令失败时，可填你自己的 PeerServer 地址，玩家双方需使用相同配置。</p>
+                </details>
+                <div id="mp-diagnostics"></div>
             </div>
             
             <div style="display:flex;gap:12px;justify-content:center;margin-top:25px;flex-wrap:wrap;">
@@ -910,7 +1037,59 @@
                 this.onConnectionChange = null;
                 this.onChat = null;
                 this._ready = false;
+                this.lastError = '';
+                this.lastEvent = '未连接';
+                this.PEER_CONFIG_KEY = 'lifecash_peer_config';
                 this.leaderboard = new this.LeaderboardManager();
+            }
+
+            getIceServers() {
+                return [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun.cloudflare.com:3478' },
+                    { urls: 'stun:stun.nextcloud.com:443' },
+                    { urls: 'stun:openrelay.metered.ca:80' },
+                    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+                    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+                    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+                ];
+            }
+
+            getPeerConfig() {
+                try {
+                    return JSON.parse(localStorage.getItem(this.PEER_CONFIG_KEY) || '{}');
+                } catch {
+                    return {};
+                }
+            }
+
+            savePeerConfig(config) {
+                localStorage.setItem(this.PEER_CONFIG_KEY, JSON.stringify(config || {}));
+            }
+
+            getPeerOptions() {
+                const options = {
+                    debug: 2,
+                    config: { iceServers: this.getIceServers() }
+                };
+                const saved = this.getPeerConfig();
+                if (saved.custom && saved.host) {
+                    options.host = saved.host;
+                    options.port = Number(saved.port) || 443;
+                    options.path = saved.path || '/';
+                    options.secure = saved.secure !== false;
+                }
+                return options;
+            }
+
+            getSignalingLabel() {
+                const saved = this.getPeerConfig();
+                if (saved.custom && saved.host) {
+                    return `${saved.secure === false ? 'ws' : 'wss'}://${saved.host}:${Number(saved.port) || 443}${saved.path || '/'}`;
+                }
+                return 'PeerJS Cloud (0.peerjs.com)';
             }
 
             // ===== 排行榜管理器 =====
@@ -979,29 +1158,18 @@
                 if (this._ready && this.peer && !this.peer.destroyed) return;
                 this.destroy();
                 return new Promise((resolve, reject) => {
-                    this.peer = new Peer(undefined, {
-                        debug: 2,
-                        config: {
-                            iceServers: [
-                                { urls: 'stun:stun.l.google.com:19302' },
-                                { urls: 'stun:stun1.l.google.com:19302' },
-                                { urls: 'stun:stun2.l.google.com:19302' },
-                                { urls: 'stun:stun.cloudflare.com:3478' },
-                                { urls: 'stun:stun.nextcloud.com:443' },
-                                { urls: 'stun:openrelay.metered.ca:80' },
-                                { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-                                { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-                                { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
-                            ]
-                        }
-                    });
+                    this.lastError = '';
+                    this.lastEvent = '连接信令服务器';
+                    this.peer = new Peer(undefined, this.getPeerOptions());
                     const timeout = setTimeout(() => {
+                        this.lastError = 'PeerJS信令服务器连接超时';
                         reject(new Error('PeerJS信令服务器连接超时(15s)，请检查网络'));
                     }, 15000);
                     this.peer.on('open', id => {
                         clearTimeout(timeout);
                         this.myPeerId = id;
                         this._ready = true;
+                        this.lastEvent = 'P2P就绪';
                         this.onConnectionChange?.('online', 'P2P就绪 ID: ' + id);
                         resolve();
                     });
@@ -1009,6 +1177,7 @@
                     this.peer.on('error', err => {
                         clearTimeout(timeout);
                         console.error('PeerJS error:', err);
+                        this.lastError = err.type || err.message || String(err);
                         this.onConnectionChange?.('error', 'P2P错误: ' + err.type);
                         if (['server-error', 'network', 'unavailable-id', 'peer-unavailable'].includes(err.type)) {
                             reject(new Error('P2P连接失败: ' + err.type + ' - 可能需要开启代理或刷新重试'));
@@ -1016,6 +1185,7 @@
                     });
                     this.peer.on('disconnected', () => {
                         this._ready = false;
+                        this.lastEvent = 'P2P断开，尝试重连';
                         this.onConnectionChange?.('offline', 'P2P断开，尝试重连...');
                         try { this.peer.reconnect(); } catch(e) {}
                     });
@@ -1025,6 +1195,7 @@
             _setupIncomingConn(conn) {
                 conn.on('open', () => {
                     this.connections.set(conn.peer, conn);
+                    this.lastEvent = '收到连接: ' + conn.peer;
                     if (this.isHost && this.room) {
                         conn.send({ type: 'room_state', room: JSON.parse(JSON.stringify(this.room)) });
                     }
@@ -1033,13 +1204,17 @@
                 conn.on('data', data => this._handleMessage(data, conn));
                 conn.on('close', () => {
                     this.connections.delete(conn.peer);
+                    this.lastEvent = '连接关闭: ' + conn.peer;
                     if (this.isHost && this.room) {
                         this.room.players = this.room.players.filter(p => p.peerId !== conn.peer);
                         this._broadcastRoom();
                     }
                     this.onConnectionChange?.(this.connections.size > 0 ? 'online' : 'offline', '在线: ' + (this.connections.size + 1));
                 });
-                conn.on('error', err => console.warn('Conn error:', err));
+                conn.on('error', err => {
+                    this.lastError = err.type || err.message || String(err);
+                    console.warn('Conn error:', err);
+                });
             }
 
             _handleMessage(data, conn) {
@@ -1127,6 +1302,7 @@
                 await this.ensureReady();
                 this.isHost = true;
                 this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                this.lastEvent = '房间已创建';
                 this.room = {
                     code: this.myPeerId, host: hostName, hostPeerId: this.myPeerId,
                     players: [{ id: this.myPlayerId, peerId: this.myPeerId, name: hostName, careerType: careerType || 'worker', isHost: true, score: 0, wealth: 0, level: 1, status: 'waiting', finished: false }],
@@ -1140,18 +1316,21 @@
                 await this.ensureReady();
                 this.isHost = false;
                 this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+                this.lastEvent = '连接房主: ' + hostPeerId;
                 return new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
+                        this.lastError = '连接房主超时';
                         reject(new Error('连接超时(15s)。可能原因：1.对方房间已关闭 2.网络不通(需STUN/TURN穿透) 3.Peer ID错误'));
                     }, 15000);
                     const conn = this.peer.connect(hostPeerId, { reliable: true });
                     conn.on('open', () => {
                         clearTimeout(timeout);
                         this.connections.set(conn.peer, conn);
+                        this.lastEvent = '已连接到房主';
                         this.onConnectionChange?.('online', '已连接到房主');
                         conn.on('data', data => this._handleMessage(data, conn));
-                        conn.on('close', () => { this.connections.delete(conn.peer); this.onConnectionChange?.('offline', '与房主断开'); });
-                        conn.on('error', err => console.warn('Host conn error:', err));
+                        conn.on('close', () => { this.connections.delete(conn.peer); this.lastEvent = '与房主断开'; this.onConnectionChange?.('offline', '与房主断开'); });
+                        conn.on('error', err => { this.lastError = err.type || err.message || String(err); console.warn('Host conn error:', err); });
                         let acked = false;
                         const ackHandler = (msgData) => {
                             if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
@@ -1166,7 +1345,11 @@
                         conn.on('data', ackHandler);
                         conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName: playerName, careerType: careerType || 'worker' });
                     });
-                    conn.on('error', err => { clearTimeout(timeout); reject(new Error('连接失败: ' + (err.type || err.message || err))); });
+                    conn.on('error', err => {
+                        clearTimeout(timeout);
+                        this.lastError = err.type || err.message || String(err);
+                        reject(new Error('连接失败: ' + (err.type || err.message || err)));
+                    });
                 });
             }
 
@@ -1186,6 +1369,7 @@
                 if (!this.room || !this.isHost) return false;
                 this.room.status = 'playing';
                 this.room.startedAt = Date.now();
+                this.lastEvent = '房间已开始';
                 this._broadcast({ type: 'start_room', room: JSON.parse(JSON.stringify(this.room)) });
                 this.onRoomState?.(this.room);
                 return true;
@@ -1211,6 +1395,7 @@
                 this.connections.clear();
                 if (this.peer) try { this.peer.destroy(); } catch {}
                 this.peer = null; this.room = null; this.myPeerId = null; this._ready = false;
+                this.lastEvent = '未连接';
             }
         }
 
@@ -1224,24 +1409,157 @@
                 this.nominatedThisGame = false;
             }
 
+            escapeHtml(value) {
+                return String(value ?? '').replace(/[&<>"']/g, ch => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]));
+            }
+
+            getPageEnvironmentLabel() {
+                const protocol = window.location.protocol;
+                const host = window.location.hostname || 'local file';
+                if (protocol === 'https:') return `HTTPS (${host})`;
+                if (protocol === 'http:' && ['localhost', '127.0.0.1', '::1'].includes(host)) return `本地 HTTP (${host})`;
+                if (protocol === 'file:') return '本地文件 file://，邀请链接不适合跨设备';
+                return `${protocol}//${host}，WebRTC 可能受限`;
+            }
+
+            loadPeerConfigForm() {
+                const config = this.mpManager.getPeerConfig();
+                document.getElementById('peer-custom-enabled').checked = !!config.custom;
+                document.getElementById('peer-host').value = config.host || '';
+                document.getElementById('peer-port').value = config.port || 443;
+                document.getElementById('peer-path').value = config.path || '/';
+                document.getElementById('peer-secure').checked = config.secure !== false;
+            }
+
+            readPeerConfigForm() {
+                let path = document.getElementById('peer-path').value.trim() || '/';
+                if (!path.startsWith('/')) path = '/' + path;
+                return {
+                    custom: document.getElementById('peer-custom-enabled').checked,
+                    host: document.getElementById('peer-host').value.trim(),
+                    port: Number(document.getElementById('peer-port').value) || 443,
+                    path,
+                    secure: document.getElementById('peer-secure').checked
+                };
+            }
+
+            savePeerConfigFromForm(showMessage = true) {
+                const config = this.readPeerConfigForm();
+                if (config.custom && !config.host) {
+                    alert('使用自定义 PeerServer 时必须填写 Host');
+                    return false;
+                }
+                this.mpManager.savePeerConfig(config);
+                this.updateMultiplayerDiagnostics('联机配置已保存');
+                if (showMessage) alert('联机配置已保存，下一次创建或加入房间时生效');
+                return true;
+            }
+
+            updateShareButtons() {
+                const hasPeerId = !!this.mpManager.myPeerId;
+                const inviteBtn = document.getElementById('btn-copy-invite');
+                const peerBtn = document.getElementById('btn-copy-peer');
+                if (inviteBtn) inviteBtn.disabled = !hasPeerId;
+                if (peerBtn) peerBtn.disabled = !hasPeerId;
+            }
+
+            updateMultiplayerDiagnostics(note = '') {
+                const box = document.getElementById('mp-diagnostics');
+                if (!box) return;
+                const room = this.mpManager.room || gameState.room;
+                const playerCount = room?.players?.length || 0;
+                const connCount = this.mpManager.connections?.size || 0;
+                const peerId = this.mpManager.myPeerId || '-';
+                const roomStatus = room?.status || '-';
+                const role = room ? (this.mpManager.isHost ? '房主' : '玩家') : '-';
+                const signaling = this.mpManager.getSignalingLabel();
+                const last = note || this.mpManager.lastEvent || '-';
+                const lastError = this.mpManager.lastError || '-';
+                box.innerHTML = `
+                    <div class="diag-grid">
+                        <div>页面环境：<code>${this.escapeHtml(this.getPageEnvironmentLabel())}</code></div>
+                        <div>信令服务：<code>${this.escapeHtml(signaling)}</code></div>
+                        <div>Peer ID：<code>${this.escapeHtml(peerId)}</code></div>
+                        <div>角色：<code>${this.escapeHtml(role)}</code></div>
+                        <div>房间状态：<code>${this.escapeHtml(roomStatus)}</code></div>
+                        <div>玩家/连接：<code>${playerCount} / ${connCount}</code></div>
+                        <div>最近事件：<code>${this.escapeHtml(last)}</code></div>
+                        <div>最近错误：<code>${this.escapeHtml(lastError)}</code></div>
+                    </div>
+                `;
+                this.updateShareButtons();
+            }
+
+            async copyText(text, successText) {
+                if (!text) return;
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        const input = document.createElement('textarea');
+                        input.value = text;
+                        input.style.position = 'fixed';
+                        input.style.opacity = '0';
+                        document.body.appendChild(input);
+                        input.select();
+                        document.execCommand('copy');
+                        input.remove();
+                    }
+                    this.updateMultiplayerDiagnostics(successText);
+                } catch (err) {
+                    alert('复制失败，请手动复制');
+                }
+            }
+
+            copyInviteLink() {
+                this.copyText(this.mpManager.getShareLink(), '邀请链接已复制');
+            }
+
+            copyPeerId() {
+                this.copyText(this.mpManager.myPeerId, 'Peer ID 已复制');
+            }
+
+            resetMultiplayerConnection() {
+                if (gameState.isRunning) {
+                    alert('游戏进行中不能重置联机连接');
+                    return;
+                }
+                this.mpManager.destroy();
+                this.mpManager = new MultiplayerManager();
+                gameState.room = null;
+                gameState.roomCode = null;
+                gameState.isHost = false;
+                document.getElementById('room-status').innerHTML = '已重置联机连接，可重新创建或加入房间';
+                document.getElementById('player-list').innerHTML = '';
+                this.loadPeerConfigForm();
+                this.checkCanStart();
+                this.updateMultiplayerDiagnostics('连接已重置');
+            }
+
             bindMultiplayerCallbacks(statusEl = null) {
                 this.mpManager.onRoomState = (room) => {
                     gameState.room = room;
                     this.updatePlayerList(room);
                     this.renderRankings();
                     this.checkCanStart();
+                    this.updateMultiplayerDiagnostics('房间状态已更新');
                 };
                 this.mpManager.onRoomStarted = (room) => {
                     if (room) gameState.room = room;
                     if (gameState.mode !== 'multiplayer' || gameState.isRunning) return;
+                    this.updateMultiplayerDiagnostics('房主已开始游戏');
                     this.ensureSelectedCareerFromRoom();
                     this.beginGame();
                 };
                 this.mpManager.onConnectionChange = (state, msg) => {
+                    this.updateMultiplayerDiagnostics(msg);
                     if (!statusEl) return;
-                    if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${msg}</small>`;
-                    else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${msg}</small>`;
-                    else if (state === 'offline') statusEl.innerHTML += `<br><small style="color:#888">📡 ${msg}</small>`;
+                    const safeMsg = this.escapeHtml(msg);
+                    if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${safeMsg}</small>`;
+                    else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${safeMsg}</small>`;
+                    else if (state === 'offline') statusEl.innerHTML += `<br><small style="color:#888">📡 ${safeMsg}</small>`;
                 };
             }
 
@@ -1298,6 +1616,7 @@
                             gameState.mode === 'multiplayer' ? 'block' : 'none';
                         
                         // 多人模式需要额外验证
+                        if (gameState.mode === 'multiplayer') this.updateMultiplayerDiagnostics();
                         this.checkCanStart();
                     });
                 });
@@ -1305,6 +1624,12 @@
                 // 多人房间按钮
                 document.getElementById('btn-create-room').onclick = () => this.createRoom();
                 document.getElementById('btn-join-room').onclick = () => this.joinRoom();
+                document.getElementById('btn-copy-invite').onclick = () => this.copyInviteLink();
+                document.getElementById('btn-copy-peer').onclick = () => this.copyPeerId();
+                document.getElementById('btn-reset-p2p').onclick = () => this.resetMultiplayerConnection();
+                document.getElementById('btn-save-peer-config').onclick = () => this.savePeerConfigFromForm(true);
+                this.loadPeerConfigForm();
+                this.updateMultiplayerDiagnostics();
 
                 // 开始按钮
                 document.getElementById('start-btn').addEventListener('click', () => this.startGame());
@@ -1364,9 +1689,15 @@
             }
 
             async createRoom() {
+                if (!this.savePeerConfigFromForm(false)) return;
                 const playerName = document.getElementById('player-name').value.trim() || '房主';
                 const statusEl = document.getElementById('room-status');
+                const createBtn = document.getElementById('btn-create-room');
+                const joinBtn = document.getElementById('btn-join-room');
                 statusEl.innerHTML = '⏳ 正在连接信令服务器...';
+                createBtn.disabled = true;
+                joinBtn.disabled = true;
+                this.updateMultiplayerDiagnostics('正在创建房间');
                 try {
                     this.bindMultiplayerCallbacks(statusEl);
                     gameState.playerName = playerName;
@@ -1376,17 +1707,23 @@
                     gameState.roomCode = room.code;
                     const shareLink = this.mpManager.getShareLink();
                     statusEl.innerHTML = `✅ 房间创建成功！<br>` +
-                        `<small>你的Peer ID: <strong>${this.mpManager.myPeerId}</strong></small><br>` +
-                        `<small>分享给朋友: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:11px">${shareLink}</code></small><br>` +
+                        `<small>你的Peer ID: <strong>${this.escapeHtml(this.mpManager.myPeerId)}</strong></small><br>` +
+                        `<small>分享给朋友: <code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;word-break:break-all;font-size:11px">${this.escapeHtml(shareLink)}</code></small><br>` +
                         `<small style="color:#888">朋友打开同一部署地址的链接，或手动输入Peer ID加入（双方需能访问PeerJS信令且WebRTC未被网络阻断）</small>`;
                     this.updatePlayerList(room);
                     this.checkCanStart();
+                    this.updateMultiplayerDiagnostics('房间创建成功');
                 } catch (err) {
-                    statusEl.innerHTML = `❌ 创建失败: ${err.message}<br><small style="color:#888">可能需要科学上网或刷新重试</small>`;
+                    statusEl.innerHTML = `❌ 创建失败: ${this.escapeHtml(err.message)}<br><small style="color:#888">可尝试刷新，或在高级联机配置中改用自建 PeerServer</small>`;
+                    this.updateMultiplayerDiagnostics('创建房间失败');
+                } finally {
+                    createBtn.disabled = false;
+                    joinBtn.disabled = false;
                 }
             }
 
             async joinRoom() {
+                if (!this.savePeerConfigFromForm(false)) return;
                 const playerName = document.getElementById('player-name').value.trim() || '玩家';
                 let hostPeerId = document.getElementById('room-code').value.trim();
                 // 支持粘贴完整URL，自动提取Peer ID
@@ -1397,7 +1734,12 @@
                 if (hostPeerId.includes('/')) hostPeerId = hostPeerId.split('/').pop().split('?')[0];
                 if (!hostPeerId) { alert('请输入房间的 Peer ID 或邀请链接'); return; }
                 const statusEl = document.getElementById('room-status');
+                const createBtn = document.getElementById('btn-create-room');
+                const joinBtn = document.getElementById('btn-join-room');
                 statusEl.innerHTML = '⏳ 正在连接信令服务器...';
+                createBtn.disabled = true;
+                joinBtn.disabled = true;
+                this.updateMultiplayerDiagnostics('正在加入房间');
                 try {
                     this.bindMultiplayerCallbacks(statusEl);
                     gameState.playerName = playerName;
@@ -1408,8 +1750,13 @@
                     statusEl.innerHTML = `✅ 已加入房间，等待房主开始...`;
                     this.updatePlayerList(result.room);
                     this.checkCanStart();
+                    this.updateMultiplayerDiagnostics('已加入房间');
                 } catch (err) {
-                    statusEl.innerHTML = `❌ 加入失败: ${err.message}<br><small style="color:#888">提示：双方都需要能访问互联网，如果使用代理请确保WebRTC流量不被阻断</small>`;
+                    statusEl.innerHTML = `❌ 加入失败: ${this.escapeHtml(err.message)}<br><small style="color:#888">提示：双方需使用同一个页面地址和同一套 PeerServer 配置；如果使用代理，请确保 WebRTC 流量未被阻断</small>`;
+                    this.updateMultiplayerDiagnostics('加入房间失败');
+                } finally {
+                    createBtn.disabled = false;
+                    joinBtn.disabled = false;
                 }
             }
 
@@ -1441,6 +1788,7 @@
                             return;
                         }
                         gameState.room = this.mpManager.room;
+                        this.updateMultiplayerDiagnostics('房间已开始');
                     } else if (gameState.room.status !== 'playing') {
                         alert('请等待房主开始游戏');
                         this.checkCanStart();
@@ -1990,6 +2338,7 @@
 
                 this.mpManager.destroy();
                 this.mpManager = new MultiplayerManager();
+                this.loadPeerConfigForm();
                 
                 this.selectedCareer = null;
                 this.nominatedThisGame = false;
@@ -2000,6 +2349,7 @@
                 gameState.isHost = false;
                 document.querySelectorAll('.career-card').forEach(c => c.classList.remove('selected'));
                 this.checkCanStart();
+                this.updateMultiplayerDiagnostics('已返回菜单');
             }
         }
 
