@@ -2,6 +2,11 @@
 
 ## 2026-05-23 - GitHub Pages 联机阶段完善
 
+### 运行报错修复补记
+1. GitHub Pages 上 `crash.html` 曾出现 `Uncaught SyntaxError: Unexpected token '{'`，根因定位为部分浏览器/运行环境对 class field 形式的 `LeaderboardManager = class {}` 兼容性不足。
+2. 已将 `LeaderboardManager` 从 `MultiplayerManager` 内部 class field 改为普通顶层 `class LeaderboardManager`，`MultiplayerManager` 构造函数直接 `new LeaderboardManager()`。
+3. 后续修改 `crash.html` 时避免在 class 内使用 public class field 语法；GitHub Pages 是纯静态托管，没有构建转译步骤，源码语法必须能被目标浏览器直接解析。
+
 ### 本阶段完成
 1. 保持纯静态前端，不引入项目后端，适配 GitHub Pages 部署环境。
 2. 多人区域新增联机诊断面板：

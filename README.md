@@ -199,6 +199,10 @@ lifecash/
 
 ## 📝 更新日志
 
+### v2.0.6 (2026-05-23)
+- 🐛 修复部分浏览器对 `LeaderboardManager = class {}` 语法不兼容导致的页面启动报错
+- 🧹 将排行榜管理器改为普通顶层 class，提升 GitHub Pages 直接打开的兼容性
+
 ### v2.0.5 (2026-05-23)
 - ✨ 新增 `mock-p2p` 模式，可在同源页面内模拟 PeerJS P2P 连接
 - ✨ 新增 `smoke-test.html`，在 GitHub Pages 上直接验证基础多人联机流程

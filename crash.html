@@ -1205,6 +1205,67 @@
             }
         }
 
+        // ==================== 排行榜管理器 ====================
+        class LeaderboardManager {
+            constructor() {
+                this.STORAGE_KEY = 'lifecash_leaderboard';
+                this.WINNERS_KEY = 'lifecash_winners';
+                this.GIST_ID_KEY = 'lifecash_gist_id';
+            }
+            addEntry(entry) {
+                const list = this.getAll();
+                list.push({ ...entry, timestamp: Date.now(), id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) });
+                list.sort((a, b) => (b.score || 0) - (a.score || 0));
+                localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list.slice(0, 100)));
+                return list;
+            }
+            getAll() {
+                try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+            }
+            getTop(n = 20) { return this.getAll().slice(0, n); }
+            nominateLifeWinner(playerData) {
+                const winners = this.getLifeWinners();
+                winners.push({ ...playerData, nominatedAt: new Date().toISOString(), id: 'w_' + Date.now() });
+                winners.sort((a, b) => (b.score || 0) - (a.score || 0));
+                localStorage.setItem(this.WINNERS_KEY, JSON.stringify(winners.slice(0, 50)));
+                return winners;
+            }
+            getLifeWinners() {
+                try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch { return []; }
+            }
+            getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
+            async syncToGist(token) {
+                const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), updatedAt: new Date().toISOString() };
+                const gistId = localStorage.getItem(this.GIST_ID_KEY);
+                const body = { description: 'LifeCash Global Leaderboard', public: true, files: { 'leaderboard.json': { content: JSON.stringify(data, null, 2) } } };
+                const url = gistId ? 'https://api.github.com/gists/' + gistId : 'https://api.github.com/gists';
+                const method = gistId ? 'PATCH' : 'POST';
+                const resp = await fetch(url, { method, headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                if (!resp.ok) throw new Error('GitHub API ' + resp.status);
+                const result = await resp.json();
+                if (!gistId && result.id) localStorage.setItem(this.GIST_ID_KEY, result.id);
+                return result;
+            }
+            async loadFromGist(gistId) {
+                const resp = await fetch('https://api.github.com/gists/' + gistId);
+                if (!resp.ok) throw new Error('无法加载 Gist');
+                const result = await resp.json();
+                const file = result.files?.['leaderboard.json'];
+                if (file) {
+                    const data = JSON.parse(file.content);
+                    if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                    if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                }
+                return result;
+            }
+            exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), exportedAt: new Date().toISOString() }, null, 2); }
+            importData(jsonStr) {
+                const data = JSON.parse(jsonStr);
+                if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
+                if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+            }
+        }
+
         // ==================== 多人游戏管理器（WebRTC P2P via PeerJS v2）====================
         class MultiplayerManager {
             constructor() {
@@ -1232,7 +1293,7 @@
                 this.maxReconnectAttempts = 6;
                 this.recoverySnapshot = null;
                 this.PEER_CONFIG_KEY = 'lifecash_peer_config';
-                this.leaderboard = new this.LeaderboardManager();
+                this.leaderboard = new LeaderboardManager();
             }
 
             getIceServers() {
@@ -1448,67 +1509,6 @@
                 }
                 return 'PeerJS Cloud (0.peerjs.com)';
             }
-
-            // ===== 排行榜管理器 =====
-            LeaderboardManager = class {
-                constructor() {
-                    this.STORAGE_KEY = 'lifecash_leaderboard';
-                    this.WINNERS_KEY = 'lifecash_winners';
-                    this.GIST_ID_KEY = 'lifecash_gist_id';
-                }
-                addEntry(entry) {
-                    const list = this.getAll();
-                    list.push({ ...entry, timestamp: Date.now(), id: 'e_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) });
-                    list.sort((a, b) => (b.score || 0) - (a.score || 0));
-                    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(list.slice(0, 100)));
-                    return list;
-                }
-                getAll() {
-                    try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
-                }
-                getTop(n = 20) { return this.getAll().slice(0, n); }
-                nominateLifeWinner(playerData) {
-                    const winners = this.getLifeWinners();
-                    winners.push({ ...playerData, nominatedAt: new Date().toISOString(), id: 'w_' + Date.now() });
-                    winners.sort((a, b) => (b.score || 0) - (a.score || 0));
-                    localStorage.setItem(this.WINNERS_KEY, JSON.stringify(winners.slice(0, 50)));
-                    return winners;
-                }
-                getLifeWinners() {
-                    try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch { return []; }
-                }
-                getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
-                async syncToGist(token) {
-                    const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), updatedAt: new Date().toISOString() };
-                    const gistId = localStorage.getItem(this.GIST_ID_KEY);
-                    const body = { description: 'LifeCash Global Leaderboard', public: true, files: { 'leaderboard.json': { content: JSON.stringify(data, null, 2) } } };
-                    const url = gistId ? 'https://api.github.com/gists/' + gistId : 'https://api.github.com/gists';
-                    const method = gistId ? 'PATCH' : 'POST';
-                    const resp = await fetch(url, { method, headers: { 'Authorization': 'token ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-                    if (!resp.ok) throw new Error('GitHub API ' + resp.status);
-                    const result = await resp.json();
-                    if (!gistId && result.id) localStorage.setItem(this.GIST_ID_KEY, result.id);
-                    return result;
-                }
-                async loadFromGist(gistId) {
-                    const resp = await fetch('https://api.github.com/gists/' + gistId);
-                    if (!resp.ok) throw new Error('无法加载 Gist');
-                    const result = await resp.json();
-                    const file = result.files?.['leaderboard.json'];
-                    if (file) {
-                        const data = JSON.parse(file.content);
-                        if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
-                        if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
-                    }
-                    return result;
-                }
-                exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), exportedAt: new Date().toISOString() }, null, 2); }
-                importData(jsonStr) {
-                    const data = JSON.parse(jsonStr);
-                    if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
-                    if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
-                }
-            };
 
             // ===== 初始化（返回Promise，等待Peer就绪）=====
             async ensureReady() {
