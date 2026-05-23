@@ -452,6 +452,12 @@
             padding: 10px 20px;
             font-size: 13px;
         }
+
+        #mp-connection-state {
+            margin: 6px 0;
+            font-size: 12px;
+            color: #2563eb;
+        }
         
         #multiplayer-info .rank-list {
             display: flex;
@@ -707,6 +713,7 @@
             
             <div id="multiplayer-info">
                 <strong>🏆 实时排行：</strong>
+                <div id="mp-connection-state"></div>
                 <div class="rank-list" id="rank-list"></div>
             </div>
             
@@ -1064,11 +1071,21 @@
                 this.isHost = false;
                 this.onRoomState = null;
                 this.onRoomStarted = null;
+                this.onRoomClosed = null;
                 this.onConnectionChange = null;
                 this.onChat = null;
                 this._ready = false;
                 this.lastError = '';
                 this.lastEvent = '未连接';
+                this.hostPeerId = null;
+                this.guestName = null;
+                this.guestCareer = 'worker';
+                this.roomClosed = false;
+                this._destroying = false;
+                this._reconnectTimer = null;
+                this._reconnectAttempts = 0;
+                this.maxReconnectAttempts = 6;
+                this.recoverySnapshot = null;
                 this.PEER_CONFIG_KEY = 'lifecash_peer_config';
                 this.leaderboard = new this.LeaderboardManager();
             }
@@ -1118,6 +1135,150 @@
 
             savePeerConfig(config) {
                 localStorage.setItem(this.PEER_CONFIG_KEY, JSON.stringify(config || {}));
+            }
+
+            cancelReconnect() {
+                if (this._reconnectTimer) {
+                    clearTimeout(this._reconnectTimer);
+                    this._reconnectTimer = null;
+                }
+                this._reconnectAttempts = 0;
+            }
+
+            setRecoverySnapshot(snapshot) {
+                this.recoverySnapshot = snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
+            }
+
+            _buildJoinPayload(playerName, careerType, reconnect = false) {
+                const payload = {
+                    type: reconnect ? 'rejoin_request' : 'join_request',
+                    playerId: this.myPlayerId,
+                    playerName: playerName,
+                    careerType: careerType || 'worker'
+                };
+                if (this.recoverySnapshot) {
+                    payload.snapshot = JSON.parse(JSON.stringify(this.recoverySnapshot));
+                }
+                return payload;
+            }
+
+            _bindGuestConnection(conn, playerName, careerType, resolve, reject, timeout, reconnect = false) {
+                conn.on('open', () => {
+                    clearTimeout(timeout);
+                    this.connections.set(conn.peer, conn);
+                    this.hostPeerId = conn.peer;
+                    this.guestName = playerName;
+                    this.guestCareer = careerType || 'worker';
+                    this.lastEvent = reconnect ? '已重新连接到房主' : '已连接到房主';
+                    this.onConnectionChange?.('online', reconnect ? '已重新连接到房主' : '已连接到房主');
+                    conn.on('data', data => this._handleMessage(data, conn));
+                    conn.on('close', () => this._handleGuestDisconnect(conn));
+                    conn.on('error', err => {
+                        this.lastError = err.type || err.message || String(err);
+                        console.warn('Host conn error:', err);
+                    });
+                    let acked = false;
+                    const ackHandler = (msgData) => {
+                        if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
+                            if (msgData.room) {
+                                acked = true;
+                                this.room = msgData.room;
+                                this.roomClosed = this.room?.status === 'closed';
+                                this.onRoomState?.(this.room);
+                                resolve({ success: true, room: this.room, reconnected: reconnect });
+                            }
+                        }
+                    };
+                    conn.on('data', ackHandler);
+                    conn.send(this._buildJoinPayload(playerName, careerType, reconnect));
+                });
+                conn.on('error', err => {
+                    clearTimeout(timeout);
+                    this.lastError = err.type || err.message || String(err);
+                    reject(new Error('连接失败: ' + (err.type || err.message || err)));
+                });
+            }
+
+            _handleGuestDisconnect(conn) {
+                this.connections.delete(conn.peer);
+                if (this._destroying) return;
+                this.lastEvent = '与房主断开';
+                this.onConnectionChange?.('offline', '与房主断开');
+                if (!this.isHost && !this.roomClosed) {
+                    this.scheduleReconnect();
+                }
+            }
+
+            scheduleReconnect() {
+                if (this.isHost || this._destroying || this.roomClosed || !this.hostPeerId) return;
+                if (this._reconnectTimer) return;
+                this._reconnectTimer = setTimeout(() => this._attemptReconnect(), 3000);
+            }
+
+            async _attemptReconnect() {
+                this._reconnectTimer = null;
+                if (this.isHost || this._destroying || this.roomClosed || !this.hostPeerId) return;
+                if (!this.peer || this.peer.destroyed) {
+                    this.lastError = 'Peer实例已销毁';
+                    this.onConnectionChange?.('offline', '重连失败，请返回菜单后重新加入');
+                    return;
+                }
+                if (this._reconnectAttempts >= this.maxReconnectAttempts) {
+                    this.lastError = '自动重连次数已用尽';
+                    this.onConnectionChange?.('offline', '自动重连失败，请返回菜单后重新加入');
+                    return;
+                }
+                this._reconnectAttempts += 1;
+                const label = `与房主断开，自动重连中 (${this._reconnectAttempts}/${this.maxReconnectAttempts})...`;
+                this.lastEvent = `重连房主(${this._reconnectAttempts}/${this.maxReconnectAttempts})`;
+                this.onConnectionChange?.('reconnecting', label);
+                try { this.peer.reconnect(); } catch(e) {}
+                const conn = this.peer.connect(this.hostPeerId, { reliable: true });
+                const timeout = setTimeout(() => {
+                    try { conn.close(); } catch {}
+                    this.lastError = '重连房主超时';
+                    if (!this._destroying && !this.roomClosed && this._reconnectAttempts < this.maxReconnectAttempts) {
+                        this.scheduleReconnect();
+                    } else {
+                        this.onConnectionChange?.('offline', '自动重连失败，请返回菜单后重新加入');
+                    }
+                }, 12000);
+                conn.on('open', () => {
+                    clearTimeout(timeout);
+                    this.connections.set(conn.peer, conn);
+                    this.lastEvent = '已重新连接到房主';
+                    this.onConnectionChange?.('online', '已重新连接到房主');
+                    conn.on('data', data => this._handleMessage(data, conn));
+                    conn.on('close', () => this._handleGuestDisconnect(conn));
+                    conn.on('error', err => {
+                        this.lastError = err.type || err.message || String(err);
+                        console.warn('Reconnect conn error:', err);
+                    });
+                    let acked = false;
+                    const ackHandler = (msgData) => {
+                        if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
+                            if (msgData.room) {
+                                acked = true;
+                                this.room = msgData.room;
+                                this.roomClosed = this.room?.status === 'closed';
+                                this.onRoomState?.(this.room);
+                                this.cancelReconnect();
+                            }
+                        }
+                    };
+                    conn.on('data', ackHandler);
+                    conn.send(this._buildJoinPayload(this.guestName || gameState.playerName || '玩家', this.guestCareer || 'worker', true));
+                });
+                conn.on('error', err => {
+                    clearTimeout(timeout);
+                    this.lastError = err.type || err.message || String(err);
+                    console.warn('Reconnect host conn error:', err);
+                    if (!this._destroying && !this.roomClosed && this._reconnectAttempts < this.maxReconnectAttempts) {
+                        this.scheduleReconnect();
+                    } else {
+                        this.onConnectionChange?.('offline', '自动重连失败，请返回菜单后重新加入');
+                    }
+                });
             }
 
             getPeerOptions() {
@@ -1208,6 +1369,8 @@
             async ensureReady() {
                 if (this._ready && this.peer && !this.peer.destroyed) return;
                 this.destroy();
+                this._destroying = false;
+                this.roomClosed = false;
                 return new Promise((resolve, reject) => {
                     this.lastError = '';
                     this.lastEvent = '连接信令服务器';
@@ -1239,6 +1402,9 @@
                         this.lastEvent = 'P2P断开，尝试重连';
                         this.onConnectionChange?.('offline', 'P2P断开，尝试重连...');
                         try { this.peer.reconnect(); } catch(e) {}
+                        if (!this.isHost && !this._destroying && this.hostPeerId) {
+                            this.scheduleReconnect();
+                        }
                     });
                 });
             }
@@ -1257,7 +1423,12 @@
                     this.connections.delete(conn.peer);
                     this.lastEvent = '连接关闭: ' + conn.peer;
                     if (this.isHost && this.room) {
-                        this.room.players = this.room.players.filter(p => p.peerId !== conn.peer);
+                        const p = this.room.players.find(player => player.peerId === conn.peer);
+                        if (p) {
+                            p.peerId = null;
+                            p.status = p.finished ? 'finished' : 'disconnected';
+                            p.disconnectedAt = Date.now();
+                        }
                         this._broadcastRoom();
                     }
                     this.onConnectionChange?.(this.connections.size > 0 ? 'online' : 'offline', '在线: ' + (this.connections.size + 1));
@@ -1280,15 +1451,35 @@
                         break;
                     }
                     case 'join_request':
+                    case 'rejoin_request':
                         if (this.isHost && this.room) {
-                            const newPlayer = {
+                            const snapshotPlayer = data.snapshot?.player || {};
+                            const existing = this.room.players.find(p => p.id === data.playerId);
+                            const recovered = {
+                                score: typeof snapshotPlayer.score === 'number' ? snapshotPlayer.score : undefined,
+                                wealth: typeof data.snapshot?.wealth === 'number' ? data.snapshot.wealth : undefined,
+                                money: typeof snapshotPlayer.money === 'number' ? snapshotPlayer.money : undefined,
+                                level: typeof snapshotPlayer.level === 'number' ? snapshotPlayer.level : undefined,
+                                day: typeof data.snapshot?.day === 'number' ? data.snapshot.day : undefined
+                            };
+                            const nextStatus = existing?.finished ? 'finished' : (this.room.status === 'playing' ? 'playing' : 'waiting');
+                            const playerPatch = {
                                 id: data.playerId, peerId: conn.peer,
                                 name: data.playerName || '玩家', careerType: data.careerType || 'worker',
-                                isHost: false, score: 0, wealth: 0, level: 1,
-                                status: 'waiting', finished: false
+                                isHost: false,
+                                score: recovered.score ?? existing?.score ?? 0,
+                                wealth: recovered.wealth ?? existing?.wealth ?? 0,
+                                money: recovered.money ?? existing?.money ?? 0,
+                                level: recovered.level ?? existing?.level ?? 1,
+                                day: recovered.day ?? existing?.day,
+                                status: nextStatus,
+                                finished: existing?.finished || false,
+                                disconnectedAt: null
                             };
-                            if (!this.room.players.find(p => p.id === newPlayer.id)) {
-                                this.room.players.push(newPlayer);
+                            if (existing) {
+                                Object.assign(existing, playerPatch);
+                            } else {
+                                this.room.players.push(playerPatch);
                             }
                             this._broadcastRoom();
                             conn.send({ type: 'join_ack', playerId: data.playerId, room: JSON.parse(JSON.stringify(this.room)) });
@@ -1323,6 +1514,24 @@
                             const p = this.room.players.find(pl => pl.id === data.playerId);
                             if (p) Object.assign(p, { score: data.score, wealth: data.wealth, level: data.level, finished: true, status: 'finished' });
                             if (this.isHost) { if (this.room.players.every(pl => pl.finished)) this.room.status = 'finished'; this._broadcastRoom(); }
+                        }
+                        break;
+                    case 'leave_room':
+                        if (this.isHost && this.room) {
+                            this.room.players = this.room.players.filter(p => p.id !== data.playerId && p.peerId !== conn.peer);
+                            this._broadcastRoom();
+                        }
+                        break;
+                    case 'room_closed':
+                        if (!this.isHost) {
+                            this.roomClosed = true;
+                            this.cancelReconnect();
+                            if (data.room) this.room = data.room;
+                            else if (this.room) this.room.status = 'closed';
+                            this.lastEvent = data.reason || '房间已关闭';
+                            this.onRoomState?.(this.room);
+                            this.onConnectionChange?.('offline', data.reason || '房主已关闭房间');
+                            this.onRoomClosed?.(data.reason || '房主已关闭房间');
                         }
                         break;
                     case 'chat':
@@ -1366,6 +1575,11 @@
             async joinRoom(hostPeerId, playerName, careerType) {
                 await this.ensureReady();
                 this.isHost = false;
+                this.roomClosed = false;
+                this.hostPeerId = hostPeerId;
+                this.guestName = playerName;
+                this.guestCareer = careerType || 'worker';
+                this.cancelReconnect();
                 this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
                 this.lastEvent = '连接房主: ' + hostPeerId;
                 return new Promise((resolve, reject) => {
@@ -1374,33 +1588,7 @@
                         reject(new Error('连接超时(15s)。可能原因：1.对方房间已关闭 2.网络不通(需STUN/TURN穿透) 3.Peer ID错误'));
                     }, 15000);
                     const conn = this.peer.connect(hostPeerId, { reliable: true });
-                    conn.on('open', () => {
-                        clearTimeout(timeout);
-                        this.connections.set(conn.peer, conn);
-                        this.lastEvent = '已连接到房主';
-                        this.onConnectionChange?.('online', '已连接到房主');
-                        conn.on('data', data => this._handleMessage(data, conn));
-                        conn.on('close', () => { this.connections.delete(conn.peer); this.lastEvent = '与房主断开'; this.onConnectionChange?.('offline', '与房主断开'); });
-                        conn.on('error', err => { this.lastError = err.type || err.message || String(err); console.warn('Host conn error:', err); });
-                        let acked = false;
-                        const ackHandler = (msgData) => {
-                            if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
-                                if (msgData.room) {
-                                    acked = true;
-                                    this.room = msgData.room;
-                                    this.onRoomState?.(this.room);
-                                    resolve({ success: true, room: this.room });
-                                }
-                            }
-                        };
-                        conn.on('data', ackHandler);
-                        conn.send({ type: 'join_request', playerId: this.myPlayerId, playerName: playerName, careerType: careerType || 'worker' });
-                    });
-                    conn.on('error', err => {
-                        clearTimeout(timeout);
-                        this.lastError = err.type || err.message || String(err);
-                        reject(new Error('连接失败: ' + (err.type || err.message || err)));
-                    });
+                    this._bindGuestConnection(conn, playerName, careerType, resolve, reject, timeout, false);
                 });
             }
 
@@ -1441,11 +1629,53 @@
                 if (this.isHost) { this._broadcast(msg); this.onChat?.(this.myPlayerId, gameState.playerName, message); }
                 else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send(msg); } catch(e) {} }
             }
+            async closeRoom(reason = '房主已关闭房间') {
+                this.roomClosed = true;
+                this.cancelReconnect();
+                if (this.isHost && this.room) {
+                    this.room.status = 'closed';
+                    this.lastEvent = reason;
+                    this._broadcast({ type: 'room_closed', reason, room: JSON.parse(JSON.stringify(this.room)) });
+                    this.onRoomState?.(this.room);
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                }
+                this.destroy();
+            }
+            async leaveRoom(reason = '玩家已离开房间') {
+                this.roomClosed = true;
+                this.cancelReconnect();
+                if (this.isHost) {
+                    await this.closeRoom('房主已离开房间');
+                    return;
+                }
+                const c = [...this.connections.values()][0];
+                if (c?.open) {
+                    try { c.send({ type: 'leave_room', playerId: this.myPlayerId, reason }); } catch(e) {}
+                    await new Promise(resolve => setTimeout(resolve, 120));
+                }
+                this.destroy();
+            }
+            notifyBeforeUnload() {
+                this._destroying = true;
+                this.roomClosed = true;
+                if (this.isHost && this.room) {
+                    this.room.status = 'closed';
+                    this._broadcast({ type: 'room_closed', reason: '房主关闭页面', room: JSON.parse(JSON.stringify(this.room)) });
+                } else {
+                    const c = [...this.connections.values()][0];
+                    if (c?.open) {
+                        try { c.send({ type: 'leave_room', playerId: this.myPlayerId, reason: '玩家关闭页面' }); } catch(e) {}
+                    }
+                }
+            }
             destroy() {
+                this._destroying = true;
+                this.cancelReconnect();
                 for (const conn of this.connections.values()) try { conn.close(); } catch {}
                 this.connections.clear();
                 if (this.peer) try { this.peer.destroy(); } catch {}
                 this.peer = null; this.room = null; this.myPeerId = null; this._ready = false;
+                this.hostPeerId = null;
                 this.lastEvent = '未连接';
             }
         }
@@ -1547,6 +1777,36 @@
                 this.updateShareButtons();
             }
 
+            updateRuntimeConnectionState(message, state = 'online') {
+                const line = document.getElementById('mp-connection-state');
+                if (!line) return;
+                const colors = {
+                    online: '#047857',
+                    reconnecting: '#b45309',
+                    offline: '#b91c1c',
+                    error: '#b91c1c',
+                    neutral: '#2563eb'
+                };
+                line.textContent = message || '';
+                line.style.color = colors[state] || colors.neutral;
+            }
+
+            handleRoomClosed(reason = '房主已关闭房间') {
+                this.updateRuntimeConnectionState(reason, 'offline');
+                this.updateMultiplayerDiagnostics(reason);
+                if (gameState.syncInterval) {
+                    clearInterval(gameState.syncInterval);
+                    gameState.syncInterval = null;
+                }
+                gameState.isRunning = false;
+                setTimeout(() => {
+                    if (gameState.mode === 'multiplayer') {
+                        alert(reason + '，已返回开始界面');
+                        this.returnToMenu({ skipNotify: true });
+                    }
+                }, 50);
+            }
+
             async copyText(text, successText) {
                 if (!text) return;
                 try {
@@ -1608,12 +1868,15 @@
                     this.ensureSelectedCareerFromRoom();
                     this.beginGame();
                 };
+                this.mpManager.onRoomClosed = (reason) => this.handleRoomClosed(reason);
                 this.mpManager.onConnectionChange = (state, msg) => {
                     this.updateMultiplayerDiagnostics(msg);
+                    this.updateRuntimeConnectionState(msg, state);
                     if (!statusEl) return;
                     const safeMsg = this.escapeHtml(msg);
                     if (state === 'online') statusEl.innerHTML += `<br><small style="color:green">🌐 ${safeMsg}</small>`;
                     else if (state === 'error') statusEl.innerHTML += `<br><small style="color:red">⚠️ ${safeMsg}</small>`;
+                    else if (state === 'reconnecting') statusEl.innerHTML += `<br><small style="color:#b45309">🔄 ${safeMsg}</small>`;
                     else if (state === 'offline') statusEl.innerHTML += `<br><small style="color:#888">📡 ${safeMsg}</small>`;
                 };
             }
@@ -1821,7 +2084,10 @@
                 list.innerHTML = room.players.map(p => 
                     {
                         const career = CONFIG.careers[p.careerType] || CONFIG.careers.worker;
-                        const status = p.finished ? '完成' : (room.status === 'playing' || p.status === 'playing' ? '游戏中' : '等待');
+                        const status = room.status === 'closed' ? '房间关闭' :
+                            p.finished ? '完成' :
+                            p.status === 'disconnected' ? '断线' :
+                            (room.status === 'playing' || p.status === 'playing' ? '游戏中' : '等待');
                         return `<span class="player-tag">${p.isHost ? '👑' : '👤'} ${p.name} · ${career.emoji}${career.name} · ${status}</span>`;
                     }
                 ).join('');
@@ -1885,6 +2151,13 @@
             pushMultiplayerState() {
                 if (gameState.mode !== 'multiplayer' || !gameState.player || !this.mpManager.room) return;
                 const p = gameState.player;
+                this.mpManager.setRecoverySnapshot({
+                    player: p.toJSON(),
+                    day: gameState.day,
+                    score: p.calculateScore(),
+                    wealth: p.money + p.getTotalAssets(),
+                    syncedAt: Date.now()
+                });
                 this.mpManager.updateMyState({
                     score: p.calculateScore(),
                     wealth: p.money + p.getTotalAssets(),
@@ -2378,7 +2651,15 @@
                 return false;
             }
 
-            returnToMenu() {
+            async returnToMenu(options = {}) {
+                const oldManager = this.mpManager;
+                if (gameState.mode === 'multiplayer' && oldManager?.room && !options.skipNotify) {
+                    if (oldManager.isHost) await oldManager.closeRoom('房主已离开房间');
+                    else await oldManager.leaveRoom('玩家已离开房间');
+                } else {
+                    oldManager?.destroy();
+                }
+
                 gameState.isRunning = false;
                 if (gameState.syncInterval) {
                     clearInterval(gameState.syncInterval);
@@ -2388,10 +2669,10 @@
                 document.getElementById('game-screen').style.display = 'none';
                 document.getElementById('start-screen').style.display = 'block';
                 document.getElementById('multiplayer-info').style.display = 'none';
+                document.getElementById('mp-connection-state').textContent = '';
                 document.getElementById('timer')?.remove();
                 document.querySelectorAll('.modal').forEach(m => m.classList.add('hidden'));
 
-                this.mpManager.destroy();
                 this.mpManager = new MultiplayerManager();
                 this.loadPeerConfigForm();
                 
@@ -2413,6 +2694,9 @@
         
         document.addEventListener('DOMContentLoaded', () => {
             ui.initStartScreen();
+            window.addEventListener('beforeunload', () => {
+                if (ui.mpManager?.room) ui.mpManager.notifyBeforeUnload();
+            });
             
             // 尝试自动加载存档
             if (localStorage.getItem('lifecash_save')) {
