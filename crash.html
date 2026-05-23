@@ -602,7 +602,149 @@
             .peer-config-grid { grid-template-columns: 1fr; }
         }
     </style>
-    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script>
+        (function () {
+            const params = new URLSearchParams(window.location.search);
+            const smokeMode = params.has('smoke');
+            const mockP2P = params.has('mock-p2p');
+            window.__LIFECASH_SMOKE_MODE__ = smokeMode;
+            window.__LIFECASH_USE_MOCK_P2P__ = mockP2P;
+            if (!mockP2P) {
+                document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
+            }
+        })();
+    </script>
+    <script>
+        (function () {
+            if (!window.__LIFECASH_USE_MOCK_P2P__) return;
+            const root = (() => {
+                try { return window.top || window; } catch { return window; }
+            })();
+            const hub = root.__LIFECASH_MOCK_P2P__ || (root.__LIFECASH_MOCK_P2P__ = {
+                peers: new Map(),
+                seq: 1
+            });
+            const clone = (value) => {
+                try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+            };
+
+            class MockConnection {
+                constructor(peer, remotePeerId, options = {}) {
+                    this.peer = remotePeerId;
+                    this.options = options;
+                    this.open = false;
+                    this._closed = false;
+                    this._pair = null;
+                    this._events = new Map();
+                }
+                on(event, handler) {
+                    if (!this._events.has(event)) this._events.set(event, []);
+                    this._events.get(event).push(handler);
+                }
+                _emit(event, ...args) {
+                    const handlers = this._events.get(event) || [];
+                    handlers.forEach(handler => {
+                        try { handler(...args); } catch (err) { console.error(err); }
+                    });
+                }
+                _setPair(pair) {
+                    this._pair = pair;
+                }
+                _open() {
+                    if (this._closed || this.open) return;
+                    this.open = true;
+                    this._emit('open');
+                }
+                send(data) {
+                    if (!this.open || this._closed || !this._pair || this._pair._closed) {
+                        throw new Error('Connection is closed');
+                    }
+                    const payload = clone(data);
+                    setTimeout(() => {
+                        if (!this._pair || this._pair._closed) return;
+                        this._pair._emit('data', payload);
+                    }, 0);
+                }
+                close() {
+                    if (this._closed) return;
+                    this._closed = true;
+                    this.open = false;
+                    const pair = this._pair;
+                    this._pair = null;
+                    this._emit('close');
+                    if (pair && !pair._closed) {
+                        pair._pair = null;
+                        pair._closed = true;
+                        pair.open = false;
+                        pair._emit('close');
+                    }
+                }
+            }
+
+            class MockPeer {
+                constructor(id, options = {}) {
+                    this._events = new Map();
+                    this._connections = new Set();
+                    this.options = options;
+                    this.destroyed = false;
+                    this.id = id || `mock_${hub.seq++}_${Math.random().toString(36).slice(2, 8)}`;
+                    if (hub.peers.has(this.id)) {
+                        setTimeout(() => this._emit('error', { type: 'unavailable-id', message: 'duplicate peer id' }), 0);
+                        return;
+                    }
+                    hub.peers.set(this.id, this);
+                    setTimeout(() => this._emit('open', this.id), 0);
+                }
+                on(event, handler) {
+                    if (!this._events.has(event)) this._events.set(event, []);
+                    this._events.get(event).push(handler);
+                }
+                _emit(event, ...args) {
+                    const handlers = this._events.get(event) || [];
+                    handlers.forEach(handler => {
+                        try { handler(...args); } catch (err) { console.error(err); }
+                    });
+                }
+                connect(peerId, options = {}) {
+                    const localConn = new MockConnection(this, peerId, options);
+                    const target = hub.peers.get(peerId);
+                    if (!target || target.destroyed) {
+                        setTimeout(() => localConn._emit('error', { type: 'peer-unavailable', message: 'peer unavailable' }), 0);
+                        return localConn;
+                    }
+                    const remoteConn = new MockConnection(target, this.id, options);
+                    localConn._setPair(remoteConn);
+                    remoteConn._setPair(localConn);
+                    this._connections.add(localConn);
+                    target._connections.add(remoteConn);
+                    setTimeout(() => {
+                        if (this.destroyed || target.destroyed) return;
+                        target._emit('connection', remoteConn);
+                        localConn._open();
+                        remoteConn._open();
+                    }, 0);
+                    return localConn;
+                }
+                reconnect() {
+                    if (this.destroyed) return;
+                    hub.peers.set(this.id, this);
+                    setTimeout(() => this._emit('open', this.id), 0);
+                }
+                destroy() {
+                    if (this.destroyed) return;
+                    this.destroyed = true;
+                    hub.peers.delete(this.id);
+                    for (const conn of [...this._connections]) {
+                        try { conn.close(); } catch {}
+                    }
+                    this._connections.clear();
+                    this._emit('disconnected');
+                }
+            }
+
+            window.Peer = MockPeer;
+        })();
+    </script>
 </head>
 <body>
     <div id="game-container">
@@ -809,6 +951,9 @@
     </div>
 
     <script>
+        const SMOKE_MODE = !!window.__LIFECASH_SMOKE_MODE__;
+        const USE_MOCK_P2P = !!window.__LIFECASH_USE_MOCK_P2P__;
+
         // ==================== 游戏配置 ====================
         const CONFIG = {
             careers: {
@@ -2691,6 +2836,11 @@
 
         // ==================== 初始化 ====================
         const ui = new UI();
+        window.ui = ui;
+        window.gameState = gameState;
+        window.CONFIG = CONFIG;
+        window.SMOKE_MODE = SMOKE_MODE;
+        window.USE_MOCK_P2P = USE_MOCK_P2P;
         
         document.addEventListener('DOMContentLoaded', () => {
             ui.initStartScreen();
@@ -2699,7 +2849,7 @@
             });
             
             // 尝试自动加载存档
-            if (localStorage.getItem('lifecash_save')) {
+            if (!SMOKE_MODE && localStorage.getItem('lifecash_save')) {
                 const shouldLoad = confirm('发现存档，是否继续上次游戏？');
                 if (shouldLoad) {
                     ui.loadGame();

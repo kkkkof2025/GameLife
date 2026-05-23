@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LifeCash 联机冒烟测试</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f6f8fb;
+            color: #1f2937;
+        }
+        header {
+            padding: 18px 24px;
+            background: #111827;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        header p {
+            margin: 4px 0 0;
+            color: #cbd5e1;
+            font-size: 13px;
+        }
+        button {
+            border: 0;
+            border-radius: 6px;
+            background: #2563eb;
+            color: white;
+            padding: 10px 16px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        main {
+            padding: 18px 24px 24px;
+        }
+        #summary {
+            min-height: 34px;
+            padding: 9px 12px;
+            border-left: 4px solid #64748b;
+            background: white;
+            font-size: 14px;
+        }
+        #summary.pass { border-left-color: #059669; }
+        #summary.fail { border-left-color: #dc2626; }
+        #log {
+            margin: 14px 0;
+            padding: 12px 16px;
+            background: #0f172a;
+            color: #d1fae5;
+            border-radius: 6px;
+            min-height: 120px;
+            white-space: pre-wrap;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .frames {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+        }
+        .frame-panel {
+            min-width: 0;
+        }
+        .frame-panel h2 {
+            margin: 0 0 8px;
+            font-size: 14px;
+        }
+        iframe {
+            width: 100%;
+            height: 620px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            background: white;
+        }
+        @media (max-width: 900px) {
+            .frames { grid-template-columns: 1fr; }
+            iframe { height: 560px; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div>
+            <h1>LifeCash 联机冒烟测试</h1>
+            <p>使用内置 mock-p2p，不访问 PeerJS 公共信令；适合 GitHub Pages 页面内验证基础联机流程。</p>
+        </div>
+        <button id="run-btn">运行测试</button>
+    </header>
+
+    <main>
+        <div id="summary">等待运行。</div>
+        <pre id="log"></pre>
+        <div class="frames">
+            <div class="frame-panel">
+                <h2>房主页面</h2>
+                <iframe id="host-frame" title="host"></iframe>
+            </div>
+            <div class="frame-panel">
+                <h2>客端页面</h2>
+                <iframe id="guest-frame" title="guest"></iframe>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const runBtn = document.getElementById('run-btn');
+        const summaryEl = document.getElementById('summary');
+        const logEl = document.getElementById('log');
+        const hostFrame = document.getElementById('host-frame');
+        const guestFrame = document.getElementById('guest-frame');
+        const preservedStorage = new Map();
+
+        function log(message) {
+            const time = new Date().toLocaleTimeString();
+            logEl.textContent += `[${time}] ${message}\n`;
+        }
+
+        function setSummary(message, type = '') {
+            summaryEl.className = type;
+            summaryEl.textContent = message;
+        }
+
+        function preserveStorageKeys(keys) {
+            preservedStorage.clear();
+            keys.forEach(key => {
+                preservedStorage.set(key, localStorage.getItem(key));
+                localStorage.removeItem(key);
+            });
+        }
+
+        function restoreStorageKeys() {
+            for (const [key, value] of preservedStorage) {
+                if (value === null) localStorage.removeItem(key);
+                else localStorage.setItem(key, value);
+            }
+        }
+
+        function waitFor(predicate, label, timeout = 12000) {
+            const started = Date.now();
+            return new Promise((resolve, reject) => {
+                const tick = () => {
+                    try {
+                        const value = predicate();
+                        if (value) {
+                            resolve(value);
+                            return;
+                        }
+                    } catch (err) {
+                        reject(err);
+                        return;
+                    }
+                    if (Date.now() - started > timeout) {
+                        reject(new Error(`等待超时: ${label}`));
+                        return;
+                    }
+                    setTimeout(tick, 80);
+                };
+                tick();
+            });
+        }
+
+        function loadFrame(frame, role) {
+            return new Promise((resolve, reject) => {
+                const src = `crash.html?mock-p2p=1&smoke=1&role=${role}&t=${Date.now()}`;
+                frame.onload = async () => {
+                    try {
+                        const win = frame.contentWindow;
+                        await waitFor(() => win.ui && win.gameState && win.document.querySelector('.career-card'), `${role} 初始化`);
+                        resolve(win);
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+                frame.onerror = () => reject(new Error(`${role} iframe 加载失败`));
+                frame.src = src;
+            });
+        }
+
+        function chooseMultiplayer(win, name, careerType) {
+            const doc = win.document;
+            doc.querySelector('.mode-btn[data-mode="multiplayer"]').click();
+            doc.getElementById('player-name').value = name;
+            win.ui.selectCareer(careerType);
+        }
+
+        async function runSmoke() {
+            runBtn.disabled = true;
+            logEl.textContent = '';
+            setSummary('运行中...');
+            preserveStorageKeys(['lifecash_save', 'lifecash_peer_config']);
+            window.__LIFECASH_MOCK_P2P__ = { peers: new Map(), seq: 1 };
+
+            try {
+                log('加载房主和客端页面');
+                const [host, guest] = await Promise.all([
+                    loadFrame(hostFrame, 'host'),
+                    loadFrame(guestFrame, 'guest')
+                ]);
+
+                log('设置多人模式和职业');
+                chooseMultiplayer(host, '房主测试', 'worker');
+                chooseMultiplayer(guest, '客端测试', 'teacher');
+
+                log('房主创建房间');
+                host.document.getElementById('btn-create-room').click();
+                await waitFor(() => host.ui.mpManager.myPeerId, '房主 Peer ID');
+                const inviteLink = host.ui.mpManager.getShareLink();
+                if (!inviteLink.includes('join=')) throw new Error('邀请链接未包含 join 参数');
+
+                log('客端使用邀请链接加入');
+                guest.document.getElementById('room-code').value = inviteLink;
+                guest.document.getElementById('btn-join-room').click();
+
+                await waitFor(() => host.gameState.room?.players?.length === 2, '房主看到 2 名玩家');
+                await waitFor(() => guest.gameState.room?.players?.length === 2, '客端看到 2 名玩家');
+                log('双方房间状态同步完成');
+
+                log('房主开始多人游戏');
+                host.document.getElementById('start-btn').click();
+                await waitFor(() => host.gameState.isRunning, '房主进入游戏');
+                await waitFor(() => guest.gameState.isRunning, '客端自动进入游戏');
+
+                const hostVisible = host.document.getElementById('game-screen').style.display === 'block';
+                const guestVisible = guest.document.getElementById('game-screen').style.display === 'block';
+                if (!hostVisible || !guestVisible) throw new Error('游戏界面没有同时显示');
+
+                const rankings = host.ui.mpManager.getRankings();
+                if (rankings.length !== 2) throw new Error('实时排行人数不正确');
+
+                log('基础联机流程通过');
+                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步均正常。', 'pass');
+            } catch (err) {
+                console.error(err);
+                log(`失败: ${err.message}`);
+                setSummary(`失败：${err.message}`, 'fail');
+            } finally {
+                restoreStorageKeys();
+                runBtn.disabled = false;
+            }
+        }
+
+        runBtn.addEventListener('click', runSmoke);
+        if (new URLSearchParams(window.location.search).has('autorun')) {
+            runSmoke();
+        }
+    </script>
+</body>
+</html>

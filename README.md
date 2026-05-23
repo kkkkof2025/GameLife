@@ -26,6 +26,10 @@ https://yourusername.github.io/lifecash/
 
 多人联机建议让所有玩家访问同一个部署地址（例如 GitHub Pages 或同一台机器启动的静态 HTTP 服务）。如果直接分享本机 `file://` 路径，另一台设备通常无法打开同一文件路径，只能手动输入 Peer ID。
 
+### 联机冒烟测试
+
+部署到 GitHub Pages 后访问 `smoke-test.html`，点击"运行测试"。该页面使用内置 `mock-p2p`，不访问 PeerJS 公共信令，用于验证创建房间、邀请加入、房主开始、客端自动进入和排行同步等基础流程。
+
 ## 🎯 游戏功能
 
 ### 游戏模式
@@ -118,6 +122,7 @@ https://yourusername.github.io/lifecash/
 - [x] 自定义 ICE/TURN 服务器配置入口
 - [x] 邀请链接和 Peer ID 一键复制
 - [x] 断线自动重连与房主退出处理
+- [x] GitHub Pages 内置联机冒烟测试页（mock-p2p）
 - [x] 排行榜系统（本地存储 + GitHub Gist 同步）
 - [x] 人生赢家提名排行榜
 - [x] 6种职业系统
@@ -131,7 +136,7 @@ https://yourusername.github.io/lifecash/
 
 ### 待开发 📋
 
-- [ ] Playwright 浏览器冒烟测试
+- [ ] CI 级 Playwright 自动化测试
 - [ ] 观战系统
 - [ ] 赛后房间结果页
 - [ ] 教程引导
@@ -155,6 +160,7 @@ https://yourusername.github.io/lifecash/
 lifecash/
 ├── index.html          # 入口重定向，保留查询参数并跳转到 crash.html
 ├── crash.html          # 主游戏文件（HTML/CSS/JS 单文件实现）
+├── smoke-test.html     # GitHub Pages 内置联机冒烟测试页
 ├── README.md           # 项目说明文档
 ├── .ai/                # AI协作记忆与项目进度
 ├── 需求收集/           # 需求文档
@@ -192,6 +198,12 @@ lifecash/
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.0.5 (2026-05-23)
+- ✨ 新增 `mock-p2p` 模式，可在同源页面内模拟 PeerJS P2P 连接
+- ✨ 新增 `smoke-test.html`，在 GitHub Pages 上直接验证基础多人联机流程
+- ✨ 暴露 `window.ui` / `window.gameState` 测试入口，方便后续浏览器自动化
+- 🐛 冒烟模式跳过本地存档恢复提示，避免测试被弹窗阻塞
 
 ### v2.0.4 (2026-05-23)
 - ✨ 新增断线自动重连：客端与房主断开后会按原 Peer ID 自动重连
