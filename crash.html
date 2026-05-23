@@ -618,14 +618,14 @@
         (function () {
             if (!window.__LIFECASH_USE_MOCK_P2P__) return;
             const root = (() => {
-                try { return window.top || window; } catch { return window; }
+                try { return window.top || window; } catch (err) { return window; }
             })();
             const hub = root.__LIFECASH_MOCK_P2P__ || (root.__LIFECASH_MOCK_P2P__ = {
                 peers: new Map(),
                 seq: 1
             });
             const clone = (value) => {
-                try { return JSON.parse(JSON.stringify(value)); } catch { return value; }
+                try { return JSON.parse(JSON.stringify(value)); } catch (err) { return value; }
             };
 
             class MockConnection {
@@ -735,7 +735,7 @@
                     this.destroyed = true;
                     hub.peers.delete(this.id);
                     for (const conn of [...this._connections]) {
-                        try { conn.close(); } catch {}
+                        try { conn.close(); } catch (err) {}
                     }
                     this._connections.clear();
                     this._emit('disconnected');
@@ -1220,7 +1220,7 @@
                 return list;
             }
             getAll() {
-                try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch { return []; }
+                try { return JSON.parse(localStorage.getItem(this.STORAGE_KEY) || '[]'); } catch (err) { return []; }
             }
             getTop(n = 20) { return this.getAll().slice(0, n); }
             nominateLifeWinner(playerData) {
@@ -1231,7 +1231,7 @@
                 return winners;
             }
             getLifeWinners() {
-                try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch { return []; }
+                try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch (err) { return []; }
             }
             getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
             async syncToGist(token) {
@@ -1334,7 +1334,7 @@
             getPeerConfig() {
                 try {
                     return JSON.parse(localStorage.getItem(this.PEER_CONFIG_KEY) || '{}');
-                } catch {
+                } catch (err) {
                     return {};
                 }
             }
@@ -1441,7 +1441,7 @@
                 try { this.peer.reconnect(); } catch(e) {}
                 const conn = this.peer.connect(this.hostPeerId, { reliable: true });
                 const timeout = setTimeout(() => {
-                    try { conn.close(); } catch {}
+                    try { conn.close(); } catch (err) {}
                     this.lastError = '重连房主超时';
                     if (!this._destroying && !this.roomClosed && this._reconnectAttempts < this.maxReconnectAttempts) {
                         this.scheduleReconnect();
@@ -1816,9 +1816,9 @@
             destroy() {
                 this._destroying = true;
                 this.cancelReconnect();
-                for (const conn of this.connections.values()) try { conn.close(); } catch {}
+                for (const conn of this.connections.values()) try { conn.close(); } catch (err) {}
                 this.connections.clear();
-                if (this.peer) try { this.peer.destroy(); } catch {}
+                if (this.peer) try { this.peer.destroy(); } catch (err) {}
                 this.peer = null; this.room = null; this.myPeerId = null; this._ready = false;
                 this.hostPeerId = null;
                 this.lastEvent = '未连接';
@@ -2617,7 +2617,7 @@
                 const reader = new FileReader();
                 reader.onload = e => {
                     try { this.mpManager.leaderboard.importData(e.target.result); alert('✅ 导入成功！'); this.showLeaderboard(); }
-                    catch { alert('❌ 导入失败，文件格式错误'); }
+                    catch (err) { alert('❌ 导入失败，文件格式错误'); }
                 };
                 reader.readAsText(file);
             }
