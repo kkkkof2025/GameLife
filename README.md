@@ -64,6 +64,7 @@ https://yourusername.github.io/lifecash/
 - 如果两台浏览器无法互联，优先确认双方能访问同一个页面地址、能访问 `0.peerjs.com`，并且网络没有禁用 WebRTC UDP/TCP 直连。
 - 页面内置联机诊断面板，可查看页面环境、信令服务、Peer ID、房间状态、连接数和最近错误。
 - 高级联机配置支持填写自建 PeerServer，双方使用同一套配置即可在 GitHub Pages 前端上连接自己的信令服务。
+- 高级联机配置还支持粘贴自定义 ICE/TURN 服务器，一行一个，格式可写成 `turn:host:port,username,credential`。
 - 更稳定的正式方案是保留静态前端，同时自建 PeerServer 信令服务，并配置可靠 TURN 服务；这样不需要重写游戏逻辑。
 
 ### 职业系统
@@ -114,6 +115,7 @@ https://yourusername.github.io/lifecash/
 - [x] 房主开始广播，客端自动开局
 - [x] 联机诊断面板（页面环境、信令、Peer ID、连接数、最近错误）
 - [x] 自定义 PeerServer 配置入口（适配 GitHub Pages 静态部署）
+- [x] 自定义 ICE/TURN 服务器配置入口
 - [x] 邀请链接和 Peer ID 一键复制
 - [x] 排行榜系统（本地存储 + GitHub Gist 同步）
 - [x] 人生赢家提名排行榜
@@ -189,6 +191,11 @@ lifecash/
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.0.3 (2026-05-23)
+- ✨ 新增自定义 ICE/TURN 服务器配置入口，支持在 GitHub Pages 环境下接入自建转发
+- ✨ 诊断面板显示自定义 ICE 数量，便于确认配置是否生效
+- 🐛 继续收紧联机配置保存和创建/加入流程
 
 ### v2.0.2 (2026-05-23)
 - ✨ 新增联机诊断面板，方便在 GitHub Pages 环境排查 PeerJS/WebRTC 问题

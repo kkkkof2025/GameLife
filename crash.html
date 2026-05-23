@@ -284,6 +284,30 @@
             align-items: center;
             gap: 6px;
         }
+
+        .peer-config-block {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed #d7dde5;
+        }
+
+        .peer-config-block label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 12px;
+        }
+
+        .peer-config-block textarea {
+            width: 100%;
+            min-height: 72px;
+            resize: vertical;
+            padding: 8px 10px;
+            border: 1px solid #d7dde5;
+            border-radius: 6px;
+            font-family: inherit;
+            font-size: 12px;
+        }
         
         /* 游戏界面 */
         #game-screen {
@@ -653,6 +677,12 @@
                             secure
                         </label>
                         <button id="btn-save-peer-config" type="button">保存配置</button>
+                    </div>
+                    <div class="peer-config-block">
+                        <label>
+                            自定义 ICE / TURN 服务器（每行一个，留空则使用默认公共 STUN/TURN）
+                            <textarea id="peer-ice-servers" placeholder="turn:turn.example.com:3478?transport=udp,username,credential&#10;turn:turn.example.com:5349?transport=tcp,username,credential"></textarea>
+                        </label>
                     </div>
                     <p style="margin-top:8px;color:#777;">GitHub Pages 只托管前端；公共信令失败时，可填你自己的 PeerServer 地址，玩家双方需使用相同配置。</p>
                 </details>
@@ -1044,7 +1074,7 @@
             }
 
             getIceServers() {
-                return [
+                const servers = [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
                     { urls: 'stun:stun2.l.google.com:19302' },
@@ -1055,6 +1085,27 @@
                     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
                     { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
                 ];
+                const saved = this.getPeerConfig();
+                const extra = this.parseIceServersText(saved.iceServersText || '');
+                if (extra.length) servers.push(...extra);
+                return servers;
+            }
+
+            parseIceServersText(text) {
+                return String(text || '')
+                    .split(/\r?\n/)
+                    .map(line => line.trim())
+                    .filter(line => line && !line.startsWith('#'))
+                    .map(line => {
+                        const parts = line.split(',').map(part => part.trim()).filter(Boolean);
+                        const urls = parts.shift();
+                        if (!urls) return null;
+                        const server = { urls };
+                        if (parts[0]) server.username = parts[0];
+                        if (parts[1]) server.credential = parts[1];
+                        return server;
+                    })
+                    .filter(Boolean);
             }
 
             getPeerConfig() {
@@ -1431,6 +1482,7 @@
                 document.getElementById('peer-port').value = config.port || 443;
                 document.getElementById('peer-path').value = config.path || '/';
                 document.getElementById('peer-secure').checked = config.secure !== false;
+                document.getElementById('peer-ice-servers').value = config.iceServersText || '';
             }
 
             readPeerConfigForm() {
@@ -1441,7 +1493,8 @@
                     host: document.getElementById('peer-host').value.trim(),
                     port: Number(document.getElementById('peer-port').value) || 443,
                     path,
-                    secure: document.getElementById('peer-secure').checked
+                    secure: document.getElementById('peer-secure').checked,
+                    iceServersText: document.getElementById('peer-ice-servers').value.trim()
                 };
             }
 
@@ -1475,12 +1528,14 @@
                 const roomStatus = room?.status || '-';
                 const role = room ? (this.mpManager.isHost ? '房主' : '玩家') : '-';
                 const signaling = this.mpManager.getSignalingLabel();
+                const customIceCount = this.mpManager.parseIceServersText(this.mpManager.getPeerConfig().iceServersText || '').length;
                 const last = note || this.mpManager.lastEvent || '-';
                 const lastError = this.mpManager.lastError || '-';
                 box.innerHTML = `
                     <div class="diag-grid">
                         <div>页面环境：<code>${this.escapeHtml(this.getPageEnvironmentLabel())}</code></div>
                         <div>信令服务：<code>${this.escapeHtml(signaling)}</code></div>
+                        <div>自定义 ICE：<code>${customIceCount}</code></div>
                         <div>Peer ID：<code>${this.escapeHtml(peerId)}</code></div>
                         <div>角色：<code>${this.escapeHtml(role)}</code></div>
                         <div>房间状态：<code>${this.escapeHtml(roomStatus)}</code></div>
