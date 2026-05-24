@@ -1292,6 +1292,7 @@
                 this._reconnectAttempts = 0;
                 this.maxReconnectAttempts = 6;
                 this.recoverySnapshot = null;
+                this.joinConfirmed = false;
                 this.PEER_CONFIG_KEY = 'lifecash_peer_config';
                 this.leaderboard = new LeaderboardManager();
             }
@@ -1368,9 +1369,20 @@
                 return payload;
             }
 
+            _roomContainsMe(room) {
+                return !!(room && room.players && room.players.some(player => player.id === this.myPlayerId));
+            }
+
+            _isJoinConfirmedMessage(msgData) {
+                if (!msgData || !msgData.room) return false;
+                if (msgData.type === 'join_ack') {
+                    return (!msgData.playerId || msgData.playerId === this.myPlayerId) && this._roomContainsMe(msgData.room);
+                }
+                return msgData.type === 'room_state' && this._roomContainsMe(msgData.room);
+            }
+
             _bindGuestConnection(conn, playerName, careerType, resolve, reject, timeout, reconnect = false) {
                 conn.on('open', () => {
-                    clearTimeout(timeout);
                     this.connections.set(conn.peer, conn);
                     this.hostPeerId = conn.peer;
                     this.guestName = playerName;
@@ -1385,14 +1397,14 @@
                     });
                     let acked = false;
                     const ackHandler = (msgData) => {
-                        if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
-                            if (msgData.room) {
-                                acked = true;
-                                this.room = msgData.room;
-                                this.roomClosed = this.room?.status === 'closed';
-                                this.onRoomState?.(this.room);
-                                resolve({ success: true, room: this.room, reconnected: reconnect });
-                            }
+                        if (!acked && this._isJoinConfirmedMessage(msgData)) {
+                            clearTimeout(timeout);
+                            acked = true;
+                            this.joinConfirmed = true;
+                            this.room = msgData.room;
+                            this.roomClosed = this.room?.status === 'closed';
+                            this.onRoomState?.(this.room);
+                            resolve({ success: true, room: this.room, reconnected: reconnect });
                         }
                     };
                     conn.on('data', ackHandler);
@@ -1410,7 +1422,7 @@
                 if (this._destroying) return;
                 this.lastEvent = '与房主断开';
                 this.onConnectionChange?.('offline', '与房主断开');
-                if (!this.isHost && !this.roomClosed) {
+                if (!this.isHost && this.joinConfirmed && !this.roomClosed) {
                     this.scheduleReconnect();
                 }
             }
@@ -1450,7 +1462,6 @@
                     }
                 }, 12000);
                 conn.on('open', () => {
-                    clearTimeout(timeout);
                     this.connections.set(conn.peer, conn);
                     this.lastEvent = '已重新连接到房主';
                     this.onConnectionChange?.('online', '已重新连接到房主');
@@ -1462,14 +1473,14 @@
                     });
                     let acked = false;
                     const ackHandler = (msgData) => {
-                        if (!acked && (msgData.type === 'join_ack' || msgData.type === 'room_state')) {
-                            if (msgData.room) {
-                                acked = true;
-                                this.room = msgData.room;
-                                this.roomClosed = this.room?.status === 'closed';
-                                this.onRoomState?.(this.room);
-                                this.cancelReconnect();
-                            }
+                        if (!acked && this._isJoinConfirmedMessage(msgData)) {
+                            clearTimeout(timeout);
+                            acked = true;
+                            this.joinConfirmed = true;
+                            this.room = msgData.room;
+                            this.roomClosed = this.room?.status === 'closed';
+                            this.onRoomState?.(this.room);
+                            this.cancelReconnect();
                         }
                     };
                     conn.on('data', ackHandler);
@@ -1587,6 +1598,12 @@
             _handleMessage(data, conn) {
                 switch (data.type) {
                     case 'room_state': {
+                        if (!this.isHost && !this.joinConfirmed && !this._roomContainsMe(data.room)) {
+                            break;
+                        }
+                        if (!this.isHost && this._roomContainsMe(data.room)) {
+                            this.joinConfirmed = true;
+                        }
                         const wasPlaying = this.room?.status === 'playing';
                         this.room = data.room;
                         this.onRoomState?.(this.room);
@@ -1632,6 +1649,7 @@
                         break;
                     case 'join_ack':
                         if (!this.isHost) {
+                            this.joinConfirmed = true;
                             const wasPlaying = this.room?.status === 'playing';
                             this.room = data.room;
                             this.onRoomState?.(this.room);
@@ -1706,6 +1724,7 @@
             async createRoom(hostName, careerType) {
                 await this.ensureReady();
                 this.isHost = true;
+                this.joinConfirmed = true;
                 this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
                 this.lastEvent = '房间已创建';
                 this.room = {
@@ -1721,6 +1740,7 @@
                 await this.ensureReady();
                 this.isHost = false;
                 this.roomClosed = false;
+                this.joinConfirmed = false;
                 this.hostPeerId = hostPeerId;
                 this.guestName = playerName;
                 this.guestCareer = careerType || 'worker';
@@ -1728,11 +1748,13 @@
                 this.myPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
                 this.lastEvent = '连接房主: ' + hostPeerId;
                 return new Promise((resolve, reject) => {
+                    let conn = null;
                     const timeout = setTimeout(() => {
-                        this.lastError = '连接房主超时';
-                        reject(new Error('连接超时(15s)。可能原因：1.对方房间已关闭 2.网络不通(需STUN/TURN穿透) 3.Peer ID错误'));
+                        this.lastError = '等待房主确认超时';
+                        if (conn) try { conn.close(); } catch (err) {}
+                        reject(new Error('加入房间超时(15s)。可能原因：1.对方房间已关闭 2.网络不通(需STUN/TURN穿透) 3.Peer ID错误'));
                     }, 15000);
-                    const conn = this.peer.connect(hostPeerId, { reliable: true });
+                    conn = this.peer.connect(hostPeerId, { reliable: true });
                     this._bindGuestConnection(conn, playerName, careerType, resolve, reject, timeout, false);
                 });
             }
@@ -1821,6 +1843,7 @@
                 if (this.peer) try { this.peer.destroy(); } catch (err) {}
                 this.peer = null; this.room = null; this.myPeerId = null; this._ready = false;
                 this.hostPeerId = null;
+                this.joinConfirmed = false;
                 this.lastEvent = '未连接';
             }
         }
@@ -1902,6 +1925,7 @@
                 const peerId = this.mpManager.myPeerId || '-';
                 const roomStatus = room?.status || '-';
                 const role = room ? (this.mpManager.isHost ? '房主' : '玩家') : '-';
+                const joinState = this.mpManager.isHost ? '已确认' : (this.mpManager.joinConfirmed ? '已确认' : '待确认');
                 const signaling = this.mpManager.getSignalingLabel();
                 const customIceCount = this.mpManager.parseIceServersText(this.mpManager.getPeerConfig().iceServersText || '').length;
                 const last = note || this.mpManager.lastEvent || '-';
@@ -1913,6 +1937,7 @@
                         <div>自定义 ICE：<code>${customIceCount}</code></div>
                         <div>Peer ID：<code>${this.escapeHtml(peerId)}</code></div>
                         <div>角色：<code>${this.escapeHtml(role)}</code></div>
+                        <div>加入确认：<code>${this.escapeHtml(joinState)}</code></div>
                         <div>房间状态：<code>${this.escapeHtml(roomStatus)}</code></div>
                         <div>玩家/连接：<code>${playerCount} / ${connCount}</code></div>
                         <div>最近事件：<code>${this.escapeHtml(last)}</code></div>

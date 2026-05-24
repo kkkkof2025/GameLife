@@ -228,6 +228,10 @@
 
                 await waitFor(() => host.gameState.room?.players?.length === 2, '房主看到 2 名玩家');
                 await waitFor(() => guest.gameState.room?.players?.length === 2, '客端看到 2 名玩家');
+                await waitFor(() => guest.ui.mpManager.joinConfirmed, '客端加入确认');
+                if (!guest.gameState.room.players.some(p => p.id === guest.ui.mpManager.myPlayerId)) {
+                    throw new Error('客端房间快照未包含自己');
+                }
                 log('双方房间状态同步完成');
 
                 log('房主开始多人游戏');
