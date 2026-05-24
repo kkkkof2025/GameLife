@@ -1004,7 +1004,8 @@
             playerName: null,
             isHost: false,
             players: [],
-            syncInterval: null
+            syncInterval: null,
+            gameEnded: false
         };
 
         // ==================== 玩家类 ====================
@@ -1661,7 +1662,11 @@
                     case 'update_player':
                         if (this.isHost && this.room) {
                             const p = this.room.players.find(pl => pl.id === data.playerId);
-                            if (p) { Object.assign(p, data.patch || {}); this._broadcastRoom(); }
+                            if (p) {
+                                Object.assign(p, data.patch || {});
+                                this._markRoomFinishedIfComplete();
+                                this._broadcastRoom();
+                            }
                         }
                         break;
                     case 'start_room':
@@ -1676,7 +1681,7 @@
                         if (this.room) {
                             const p = this.room.players.find(pl => pl.id === data.playerId);
                             if (p) Object.assign(p, { score: data.score, wealth: data.wealth, level: data.level, finished: true, status: 'finished' });
-                            if (this.isHost) { if (this.room.players.every(pl => pl.finished)) this.room.status = 'finished'; this._broadcastRoom(); }
+                            if (this.isHost) { this._markRoomFinishedIfComplete(); this._broadcastRoom(); }
                         }
                         break;
                     case 'leave_room':
@@ -1721,6 +1726,16 @@
                 this.onRoomState?.(this.room);
             }
 
+            _markRoomFinishedIfComplete() {
+                if (!this.room || !this.room.players.length) return false;
+                if (this.room.players.every(player => player.finished)) {
+                    this.room.status = 'finished';
+                    this.room.finishedAt = this.room.finishedAt || Date.now();
+                    return true;
+                }
+                return false;
+            }
+
             async createRoom(hostName, careerType) {
                 await this.ensureReady();
                 this.isHost = true;
@@ -1763,7 +1778,7 @@
                 if (!this.room || !this.myPlayerId) return;
                 const p = this.room.players.find(pl => pl.id === this.myPlayerId);
                 if (p) Object.assign(p, patch);
-                if (this.isHost) { this._broadcastRoom(); }
+                if (this.isHost) { this._markRoomFinishedIfComplete(); this._broadcastRoom(); }
                 else { const c = [...this.connections.values()][0]; if (c?.open) try { c.send({ type: 'update_player', playerId: this.myPlayerId, patch }); } catch(e) {} }
                 this.onRoomState?.(this.room);
             }
@@ -2299,6 +2314,7 @@
                 gameState.day = 1;
                 gameState.startTime = Date.now();
                 gameState.isRunning = true;
+                gameState.gameEnded = false;
                 
                 document.getElementById('start-screen').style.display = 'none';
                 document.getElementById('game-screen').style.display = 'block';
@@ -2512,6 +2528,12 @@
             }
 
             showGameEnd() {
+                if (gameState.gameEnded) {
+                    this.showModal('end-modal');
+                    return;
+                }
+                gameState.gameEnded = true;
+                gameState.isRunning = false;
                 const report = gameState.player.getReport();
                 let statusText = '';
                 
@@ -2569,6 +2591,7 @@
                 if (gameState.mode === 'multiplayer') {
                     this.mpManager.submitFinalScore(report.score, report.totalWealth, report.level);
                     if (gameState.syncInterval) clearInterval(gameState.syncInterval);
+                    gameState.syncInterval = null;
                     this.renderRankings();
                 }
                 
@@ -2797,6 +2820,7 @@
                     gameState.mode = saveData.gameState.mode;
                     gameState.day = saveData.gameState.day;
                     gameState.startTime = saveData.gameState.startTime;
+                    gameState.gameEnded = false;
                     
                     const p = saveData.player;
                     gameState.player = new Player(p.careerType, p.name || '玩家');
@@ -2831,6 +2855,7 @@
                 }
 
                 gameState.isRunning = false;
+                gameState.gameEnded = false;
                 if (gameState.syncInterval) {
                     clearInterval(gameState.syncInterval);
                     gameState.syncInterval = null;

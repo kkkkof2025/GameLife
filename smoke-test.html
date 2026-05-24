@@ -246,8 +246,16 @@
                 const rankings = host.ui.mpManager.getRankings();
                 if (rankings.length !== 2) throw new Error('实时排行人数不正确');
 
+                log('提交双方最终成绩');
+                host.ui.mpManager.submitFinalScore(100, 1000, 1);
+                guest.ui.mpManager.submitFinalScore(120, 2000, 1);
+                await waitFor(() => host.gameState.room?.status === 'finished', '房主房间完成');
+                await waitFor(() => guest.gameState.room?.status === 'finished', '客端房间完成');
+                if (!host.gameState.room.players.every(p => p.finished)) throw new Error('房主房间仍有未完成玩家');
+                if (!guest.gameState.room.players.every(p => p.finished)) throw new Error('客端房间仍有未完成玩家');
+
                 log('基础联机流程通过');
-                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步均正常。', 'pass');
+                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、最终成绩完成均正常。', 'pass');
             } catch (err) {
                 console.error(err);
                 log(`失败: ${err.message}`);
