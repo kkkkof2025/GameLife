@@ -2577,6 +2577,21 @@
                 this.nominatedThisGame = false;
 
                 const isWinner = ['free', 'rich'].includes(report.status);
+                const roomRankings = gameState.mode === 'multiplayer' ? this.mpManager.getRankings() : [];
+                const roomResultHtml = gameState.mode === 'multiplayer' ? `
+                    <div class="report-section">
+                        <h3>👥 房间结果</h3>
+                        <div class="stat-row"><span>房间状态</span><span>${this.escapeHtml(gameState.room?.status === 'finished' ? '已结算' : (gameState.room?.status || '-'))}</span></div>
+                        ${roomRankings.length === 0
+                            ? '<p style="color:#888">暂无房间排名</p>'
+                            : roomRankings.map((p, i) => `
+                                <div class="stat-row">
+                                    <span>${i <= 2 ? ['🥇', '🥈', '🥉'][i] : ''} ${this.escapeHtml(p.name)} · ${this.escapeHtml(p.finished ? '已完成' : (p.status || '等待'))}</span>
+                                    <span>${(p.score || 0)}分</span>
+                                </div>
+                            `).join('')}
+                    </div>
+                ` : '';
                 const nominateHtml = isWinner ? `
                     <div style="margin:15px 0;padding:15px;background:linear-gradient(135deg,#fff7ed,#fef3c7);border-radius:12px;border:2px solid #f59e0b;">
                         <p style="font-weight:bold;color:#92400e;margin-bottom:10px;">🏆 恭喜达成「人生赢家」！</p>
@@ -2602,6 +2617,7 @@
                         <div class="stat-row"><span>投资次数</span><span>${report.investments}次</span></div>
                         <div class="stat-row"><span>综合评分</span><span>${report.score}分</span></div>
                     </div>
+                    ${roomResultHtml}
                     ${nominateHtml}
                 `;
                 

@@ -264,15 +264,21 @@
                 await waitFor(() => guest.gameState.room?.players?.some(p => p.id === guestPlayerId && p.status === 'playing'), '客端收到重连后房间状态');
 
                 log('提交双方最终成绩');
-                host.ui.mpManager.submitFinalScore(100, 1000, 1);
-                guest.ui.mpManager.submitFinalScore(120, 2000, 1);
+                host.ui.showGameEnd();
+                guest.ui.showGameEnd();
                 await waitFor(() => host.gameState.room?.status === 'finished', '房主房间完成');
                 await waitFor(() => guest.gameState.room?.status === 'finished', '客端房间完成');
                 if (!host.gameState.room.players.every(p => p.finished)) throw new Error('房主房间仍有未完成玩家');
                 if (!guest.gameState.room.players.every(p => p.finished)) throw new Error('客端房间仍有未完成玩家');
+                const hostEndText = host.document.getElementById('end-report').textContent;
+                const guestEndText = guest.document.getElementById('end-report').textContent;
+                if (!hostEndText.includes('房间结果')) throw new Error('房主结算页缺少房间结果');
+                if (!guestEndText.includes('房间结果')) throw new Error('客端结算页缺少房间结果');
+                if (!hostEndText.includes('房主测试') || !hostEndText.includes('客端测试')) throw new Error('房主结算页缺少房间成员');
+                if (!guestEndText.includes('房主测试') || !guestEndText.includes('客端测试')) throw new Error('客端结算页缺少房间成员');
 
                 log('基础联机流程通过');
-                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、断线重连、最终成绩完成均正常。', 'pass');
+                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、断线重连、赛后结果页、最终成绩完成均正常。', 'pass');
             } catch (err) {
                 console.error(err);
                 log(`失败: ${err.message}`);
