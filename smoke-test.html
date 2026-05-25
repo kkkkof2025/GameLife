@@ -246,6 +246,23 @@
                 const rankings = host.ui.mpManager.getRankings();
                 if (rankings.length !== 2) throw new Error('实时排行人数不正确');
 
+                log('模拟客端断线并等待自动重连');
+                const guestPlayerId = guest.ui.mpManager.myPlayerId;
+                const hostPeerId = guest.ui.mpManager.hostPeerId;
+                const guestConn = guest.ui.mpManager.connections.get(hostPeerId) || [...guest.ui.mpManager.connections.values()][0];
+                if (!guestConn) throw new Error('未找到客端到房主的连接');
+                guestConn.close();
+                await waitFor(() => !guest.ui.mpManager.joinConfirmed && guest.ui.mpManager.lastEvent === '与房主断开', '客端进入待重连状态', 3000);
+                await waitFor(() => {
+                    const p = host.gameState.room?.players?.find(player => player.id === guestPlayerId);
+                    return p && p.status === 'disconnected';
+                }, '房主标记客端断线', 5000);
+                await waitFor(() => {
+                    const p = host.gameState.room?.players?.find(player => player.id === guestPlayerId);
+                    return guest.ui.mpManager.joinConfirmed && p && p.status === 'playing' && p.peerId;
+                }, '客端自动重连确认', 12000);
+                await waitFor(() => guest.gameState.room?.players?.some(p => p.id === guestPlayerId && p.status === 'playing'), '客端收到重连后房间状态');
+
                 log('提交双方最终成绩');
                 host.ui.mpManager.submitFinalScore(100, 1000, 1);
                 guest.ui.mpManager.submitFinalScore(120, 2000, 1);
@@ -255,7 +272,7 @@
                 if (!guest.gameState.room.players.every(p => p.finished)) throw new Error('客端房间仍有未完成玩家');
 
                 log('基础联机流程通过');
-                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、最终成绩完成均正常。', 'pass');
+                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、断线重连、最终成绩完成均正常。', 'pass');
             } catch (err) {
                 console.error(err);
                 log(`失败: ${err.message}`);

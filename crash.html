@@ -1370,16 +1370,26 @@
                 return payload;
             }
 
+            _getMyRoomPlayerFrom(room) {
+                if (!room || !room.players) return null;
+                return room.players.find(player => player.id === this.myPlayerId) || null;
+            }
+
             _roomContainsMe(room) {
-                return !!(room && room.players && room.players.some(player => player.id === this.myPlayerId));
+                return !!this._getMyRoomPlayerFrom(room);
+            }
+
+            _roomHasActiveMe(room) {
+                const player = this._getMyRoomPlayerFrom(room);
+                return !!(player && player.status !== 'disconnected' && player.peerId);
             }
 
             _isJoinConfirmedMessage(msgData) {
                 if (!msgData || !msgData.room) return false;
                 if (msgData.type === 'join_ack') {
-                    return (!msgData.playerId || msgData.playerId === this.myPlayerId) && this._roomContainsMe(msgData.room);
+                    return (!msgData.playerId || msgData.playerId === this.myPlayerId) && this._roomHasActiveMe(msgData.room);
                 }
-                return msgData.type === 'room_state' && this._roomContainsMe(msgData.room);
+                return msgData.type === 'room_state' && this._roomHasActiveMe(msgData.room);
             }
 
             _bindGuestConnection(conn, playerName, careerType, resolve, reject, timeout, reconnect = false) {
@@ -1388,8 +1398,8 @@
                     this.hostPeerId = conn.peer;
                     this.guestName = playerName;
                     this.guestCareer = careerType || 'worker';
-                    this.lastEvent = reconnect ? '已重新连接到房主' : '已连接到房主';
-                    this.onConnectionChange?.('online', reconnect ? '已重新连接到房主' : '已连接到房主');
+                    this.lastEvent = reconnect ? '已连接到房主，等待重连确认' : '已连接到房主，等待加入确认';
+                    this.onConnectionChange?.(reconnect ? 'reconnecting' : 'online', this.lastEvent);
                     conn.on('data', data => this._handleMessage(data, conn));
                     conn.on('close', () => this._handleGuestDisconnect(conn));
                     conn.on('error', err => {
@@ -1404,6 +1414,8 @@
                             this.joinConfirmed = true;
                             this.room = msgData.room;
                             this.roomClosed = this.room?.status === 'closed';
+                            this.lastEvent = reconnect ? '已重新连接到房主' : '已加入房间';
+                            this.onConnectionChange?.('online', this.lastEvent);
                             this.onRoomState?.(this.room);
                             resolve({ success: true, room: this.room, reconnected: reconnect });
                         }
@@ -1421,9 +1433,11 @@
             _handleGuestDisconnect(conn) {
                 this.connections.delete(conn.peer);
                 if (this._destroying) return;
+                const wasConfirmed = this.joinConfirmed;
+                this.joinConfirmed = false;
                 this.lastEvent = '与房主断开';
                 this.onConnectionChange?.('offline', '与房主断开');
-                if (!this.isHost && this.joinConfirmed && !this.roomClosed) {
+                if (!this.isHost && wasConfirmed && !this.roomClosed) {
                     this.scheduleReconnect();
                 }
             }
@@ -1448,6 +1462,7 @@
                     return;
                 }
                 this._reconnectAttempts += 1;
+                this.joinConfirmed = false;
                 const label = `与房主断开，自动重连中 (${this._reconnectAttempts}/${this.maxReconnectAttempts})...`;
                 this.lastEvent = `重连房主(${this._reconnectAttempts}/${this.maxReconnectAttempts})`;
                 this.onConnectionChange?.('reconnecting', label);
@@ -1464,8 +1479,8 @@
                 }, 12000);
                 conn.on('open', () => {
                     this.connections.set(conn.peer, conn);
-                    this.lastEvent = '已重新连接到房主';
-                    this.onConnectionChange?.('online', '已重新连接到房主');
+                    this.lastEvent = '已连接到房主，等待重连确认';
+                    this.onConnectionChange?.('reconnecting', this.lastEvent);
                     conn.on('data', data => this._handleMessage(data, conn));
                     conn.on('close', () => this._handleGuestDisconnect(conn));
                     conn.on('error', err => {
@@ -1480,6 +1495,8 @@
                             this.joinConfirmed = true;
                             this.room = msgData.room;
                             this.roomClosed = this.room?.status === 'closed';
+                            this.lastEvent = '已重新连接到房主';
+                            this.onConnectionChange?.('online', this.lastEvent);
                             this.onRoomState?.(this.room);
                             this.cancelReconnect();
                         }
@@ -1599,10 +1616,11 @@
             _handleMessage(data, conn) {
                 switch (data.type) {
                     case 'room_state': {
-                        if (!this.isHost && !this.joinConfirmed && !this._roomContainsMe(data.room)) {
+                        const hasActiveMe = this._roomHasActiveMe(data.room);
+                        if (!this.isHost && !this.joinConfirmed && !hasActiveMe) {
                             break;
                         }
-                        if (!this.isHost && this._roomContainsMe(data.room)) {
+                        if (!this.isHost && hasActiveMe) {
                             this.joinConfirmed = true;
                         }
                         const wasPlaying = this.room?.status === 'playing';
