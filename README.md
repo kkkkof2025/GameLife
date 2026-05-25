@@ -30,6 +30,14 @@ https://yourusername.github.io/lifecash/
 
 部署到 GitHub Pages 后访问 `smoke-test.html`，点击"运行测试"。该页面使用内置 `mock-p2p`，不访问 PeerJS 公共信令，用于验证创建房间、邀请加入、房主开始、客端自动进入和排行同步等基础流程。
 
+本地和 CI 可直接运行：
+
+```bash
+python scripts/run_smoke.py
+```
+
+该脚本使用 Playwright 路由拦截提供同源 HTTP 环境，不需要绑定本地端口；当前自动覆盖创建房间、加入确认、房主开局、排行同步、断线重连、赛后结果页和最终成绩闭环。
+
 ## 🎯 游戏功能
 
 ### 游戏模式
@@ -123,6 +131,7 @@ https://yourusername.github.io/lifecash/
 - [x] 邀请链接和 Peer ID 一键复制
 - [x] 断线自动重连与房主退出处理
 - [x] GitHub Pages 内置联机冒烟测试页（mock-p2p）
+- [x] CI 级 Playwright 自动化测试
 - [x] 排行榜系统（本地存储 + GitHub Gist 同步）
 - [x] 人生赢家提名排行榜
 - [x] 6种职业系统
@@ -136,7 +145,6 @@ https://yourusername.github.io/lifecash/
 
 ### 待开发 📋
 
-- [ ] CI 级 Playwright 自动化测试
 - [ ] 观战系统
 - [ ] 教程引导
 - [ ] 更多职业/投资品种
@@ -160,6 +168,8 @@ lifecash/
 ├── index.html          # 入口重定向，保留查询参数并跳转到 crash.html
 ├── crash.html          # 主游戏文件（HTML/CSS/JS 单文件实现）
 ├── smoke-test.html     # GitHub Pages 内置联机冒烟测试页
+├── scripts/            # 本地/CI 自动化脚本
+├── .github/workflows/  # GitHub Actions 工作流
 ├── README.md           # 项目说明文档
 ├── .ai/                # AI协作记忆与项目进度
 ├── 需求收集/           # 需求文档
@@ -197,6 +207,11 @@ lifecash/
 5. 创建 Pull Request
 
 ## 📝 更新日志
+
+### v2.1.2 (2026-05-25)
+- ✨ 新增 `scripts/run_smoke.py`，可在本地和 CI 中重复运行页面级联机 smoke
+- ✨ 新增 GitHub Actions 工作流，push/PR 到 `main` 时自动跑 Playwright smoke
+- 🧪 自动化覆盖创建房间、加入、开局、排行同步、断线重连、赛后结果页和最终成绩
 
 ### v2.1.1 (2026-05-25)
 - ✨ 新增多人赛后结果页，结束弹窗会展示整个房间的最终排名和结算状态
