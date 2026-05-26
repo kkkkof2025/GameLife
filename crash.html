@@ -588,6 +588,170 @@
             font-size: 14px;
         }
         
+        .modal-content.wide-modal {
+            max-width: 720px;
+            text-align: left;
+        }
+
+        .modal-content.wide-modal h2 {
+            text-align: center;
+        }
+
+        .modal-content.wide-modal .modal-actions,
+        .leaderboard-actions,
+        .history-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 14px;
+        }
+
+        .modal-btn.secondary {
+            background: linear-gradient(90deg, #64748b 0%, #475569 100%);
+        }
+
+        .leaderboard-summary,
+        .history-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .summary-chip {
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+        }
+
+        .summary-chip strong {
+            display: block;
+            font-size: 18px;
+            margin-bottom: 4px;
+            color: #0f172a;
+        }
+
+        .summary-chip span {
+            font-size: 12px;
+            color: #64748b;
+        }
+
+        .leaderboard-section {
+            margin: 14px 0;
+            padding-top: 2px;
+        }
+
+        .leaderboard-section h3,
+        .history-card h3 {
+            margin-bottom: 10px;
+        }
+
+        .leaderboard-row span:first-child,
+        .history-player span:first-child {
+            word-break: break-word;
+        }
+
+        .history-list {
+            display: grid;
+            gap: 12px;
+        }
+
+        .history-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            background: #fff;
+            padding: 14px;
+        }
+
+        .history-card-head {
+            display: flex;
+            gap: 10px;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .history-card-head strong {
+            display: block;
+            font-size: 16px;
+            color: #0f172a;
+        }
+
+        .history-card-head small {
+            display: block;
+            color: #64748b;
+            margin-top: 4px;
+            font-size: 12px;
+        }
+
+        .history-badge {
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: #e0f2fe;
+            color: #0369a1;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+
+        .history-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 8px;
+            font-size: 12px;
+            color: #475569;
+            margin-bottom: 10px;
+        }
+
+        .history-meta span {
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+        }
+
+        .history-highlight {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+            border: 1px solid #dbeafe;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
+
+        .history-highlight strong {
+            color: #0f172a;
+        }
+
+        .history-rankings {
+            display: grid;
+            gap: 8px;
+        }
+
+        .history-player {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #eef2f7;
+            font-size: 13px;
+        }
+
+        .history-player:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .empty-tip {
+            color: #64748b;
+            font-size: 14px;
+            padding: 10px 0;
+        }
         /* 响应式 */
         @media (max-width: 600px) {
             .career-grid { grid-template-columns: repeat(2, 1fr); }
@@ -840,6 +1004,7 @@
             <div style="display:flex;gap:12px;justify-content:center;margin-top:25px;flex-wrap:wrap;">
                 <button class="start-btn" id="start-btn" disabled>开始人生旅程</button>
                 <button class="start-btn" id="btn-leaderboard" style="background:linear-gradient(90deg,#f59e0b,#d97706);padding:16px 30px;">🏆 排行榜</button>
+                <button class="start-btn" id="btn-room-history" style="background:linear-gradient(90deg,#64748b,#475569);padding:16px 30px;">🕘 房间历史</button>
             </div>
         </div>
         
@@ -905,13 +1070,25 @@
     
     <!-- 排行榜弹窗 -->
     <div id="leaderboard-modal" class="modal hidden">
-        <div class="modal-content">
+        <div class="modal-content wide-modal">
             <h2>🏆 排行榜</h2>
             <div id="leaderboard-list"></div>
             <button class="modal-btn" id="leaderboard-close" onclick="document.getElementById('leaderboard-modal').classList.add('hidden')">关闭</button>
         </div>
     </div>
     
+    <!-- 房间历史弹窗 -->
+    <div id="room-history-modal" class="modal hidden">
+        <div class="modal-content wide-modal">
+            <h2>🕘 房间历史</h2>
+            <div id="room-history-list"></div>
+            <div class="history-actions">
+                <button class="modal-btn secondary" id="room-history-clear" onclick="ui.clearRoomHistory()">清空历史</button>
+                <button class="modal-btn" id="room-history-close" onclick="document.getElementById('room-history-modal').classList.add('hidden')">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 事件弹窗 -->
     <div id="event-modal" class="modal hidden">
         <div class="modal-content">
@@ -1211,6 +1388,7 @@
             constructor() {
                 this.STORAGE_KEY = 'lifecash_leaderboard';
                 this.WINNERS_KEY = 'lifecash_winners';
+                this.ROOM_HISTORY_KEY = 'lifecash_room_history';
                 this.GIST_ID_KEY = 'lifecash_gist_id';
             }
             addEntry(entry) {
@@ -1235,8 +1413,65 @@
                 try { return JSON.parse(localStorage.getItem(this.WINNERS_KEY) || '[]'); } catch (err) { return []; }
             }
             getWinnersTop(n = 10) { return this.getLifeWinners().slice(0, n); }
+            getRoomHistory() {
+                try {
+                    const records = JSON.parse(localStorage.getItem(this.ROOM_HISTORY_KEY) || '[]');
+                    return Array.isArray(records)
+                        ? records.sort((a, b) => (Date.parse(b.recordedAt || b.finishedAt || 0) || 0) - (Date.parse(a.recordedAt || a.finishedAt || 0) || 0))
+                        : [];
+                } catch (err) {
+                    return [];
+                }
+            }
+            getRoomHistoryTop(n = 10) { return this.getRoomHistory().slice(0, n); }
+            clearRoomHistory() { localStorage.removeItem(this.ROOM_HISTORY_KEY); }
+            addRoomHistory(entry) {
+                const roomKey = entry.roomKey || ((entry.roomCode || 'room') + ':' + (entry.startedAt || entry.createdAt || entry.recordedAt || '0'));
+                const record = {
+                    ...entry,
+                    id: entry.id || 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,6),
+                    roomKey,
+                    recordedAt: entry.recordedAt || new Date().toISOString()
+                };
+                const list = this.getRoomHistory().filter(item => item.roomKey !== roomKey);
+                list.unshift(record);
+                localStorage.setItem(this.ROOM_HISTORY_KEY, JSON.stringify(list.slice(0, 30)));
+                return record;
+            }
+            recordRoomMatch(room, report, playerId, playerName) {
+                if (!room || !Array.isArray(room.players)) return null;
+                const safeReport = report || {};
+                const rankings = room.players.map(player => {
+                    const career = CONFIG.careers[player.careerType] || {};
+                    return {
+                        id: player.id || '', name: player.name || '玩家',
+                        careerType: player.careerType || 'worker', career: career.name || '未知', emoji: career.emoji || '',
+                        score: Number(player.score) || 0, wealth: Number(player.wealth) || 0, level: Number(player.level) || 1,
+                        status: player.finished ? 'finished' : (player.status || 'waiting'), finished: !!player.finished, isHost: !!player.isHost
+                    };
+                }).sort((a, b) => (b.score || 0) - (a.score || 0) || (b.wealth || 0) - (a.wealth || 0));
+                const myIndex = rankings.findIndex(player => player.id === playerId);
+                const localPlayer = myIndex >= 0 ? rankings[myIndex] : null;
+                const startedAt = room.startedAt || room.createdAt || room.finishedAt || Date.now();
+                const finishedAt = room.finishedAt || Date.now();
+                return this.addRoomHistory({
+                    roomCode: room.code || room.hostPeerId || '-', hostName: room.host || '-', roomStatus: room.status || '-',
+                    playerCount: Array.isArray(room.players) ? room.players.length : 0,
+                    finishedCount: room.players.filter(player => player.finished).length,
+                    startedAt, finishedAt,
+                    durationMinutes: startedAt ? Math.max(0, Math.round((finishedAt - startedAt) / 60000)) : null,
+                    localPlayer: {
+                        id: playerId || '', name: playerName || (localPlayer && localPlayer.name) || '', rank: myIndex >= 0 ? myIndex + 1 : null,
+                        score: typeof safeReport.score === 'number' ? safeReport.score : (localPlayer && localPlayer.score) || 0,
+                        wealth: typeof safeReport.totalWealth === 'number' ? safeReport.totalWealth : (localPlayer && localPlayer.wealth) || 0,
+                        level: typeof safeReport.level === 'number' ? safeReport.level : (localPlayer && localPlayer.level) || 1,
+                        status: safeReport.status || (localPlayer && localPlayer.status) || ''
+                    },
+                    rankings: rankings.map((player, index) => ({ ...player, rank: index + 1 }))
+                });
+            }
             async syncToGist(token) {
-                const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), updatedAt: new Date().toISOString() };
+                const data = { leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), roomHistory: this.getRoomHistory(), updatedAt: new Date().toISOString() };
                 const gistId = localStorage.getItem(this.GIST_ID_KEY);
                 const body = { description: 'LifeCash Global Leaderboard', public: true, files: { 'leaderboard.json': { content: JSON.stringify(data, null, 2) } } };
                 const url = gistId ? 'https://api.github.com/gists/' + gistId : 'https://api.github.com/gists';
@@ -1256,14 +1491,16 @@
                     const data = JSON.parse(file.content);
                     if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
                     if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                    if (data.roomHistory) localStorage.setItem(this.ROOM_HISTORY_KEY, JSON.stringify(data.roomHistory));
                 }
                 return result;
             }
-            exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), exportedAt: new Date().toISOString() }, null, 2); }
+            exportData() { return JSON.stringify({ leaderboard: this.getAll(), lifeWinners: this.getLifeWinners(), roomHistory: this.getRoomHistory(), exportedAt: new Date().toISOString() }, null, 2); }
             importData(jsonStr) {
                 const data = JSON.parse(jsonStr);
                 if (data.leaderboard) localStorage.setItem(this.STORAGE_KEY, JSON.stringify(data.leaderboard));
                 if (data.lifeWinners) localStorage.setItem(this.WINNERS_KEY, JSON.stringify(data.lifeWinners));
+                if (data.roomHistory) localStorage.setItem(this.ROOM_HISTORY_KEY, JSON.stringify(data.roomHistory));
             }
         }
 
@@ -1889,6 +2126,8 @@
                 this.selectedCareer = null;
                 this.mpManager = new MultiplayerManager();
                 this.nominatedThisGame = false;
+                this.pendingRoomReport = null;
+                this.lastRecordedRoomHistoryKey = null;
             }
 
             escapeHtml(value) {
@@ -2063,6 +2302,7 @@
                     this.renderRankings();
                     this.checkCanStart();
                     this.updateMultiplayerDiagnostics('房间状态已更新');
+                    this.recordRoomHistoryIfReady(room);
                 };
                 this.mpManager.onRoomStarted = (room) => {
                     if (room) gameState.room = room;
@@ -2158,6 +2398,8 @@
                 // 排行榜按钮
                 const lbBtn = document.getElementById('btn-leaderboard');
                 if (lbBtn) lbBtn.onclick = () => this.showLeaderboard();
+                const historyBtn = document.getElementById('btn-room-history');
+                if (historyBtn) historyBtn.onclick = () => this.showRoomHistory();
 
                 // 检查URL邀请
                 const invitePeerId = this.mpManager.checkUrlInvite();
@@ -2553,6 +2795,7 @@
                 gameState.gameEnded = true;
                 gameState.isRunning = false;
                 const report = gameState.player.getReport();
+                this.pendingRoomReport = gameState.mode === 'multiplayer' ? report : null;
                 let statusText = '';
                 
                 switch(report.status) {
@@ -2627,6 +2870,7 @@
                     if (gameState.syncInterval) clearInterval(gameState.syncInterval);
                     gameState.syncInterval = null;
                     this.renderRankings();
+                    this.recordRoomHistoryIfReady(this.mpManager.room || gameState.room);
                 }
                 
                 this.showModal('end-modal');
@@ -2651,6 +2895,93 @@
                 alert('🎉 已成功提名到人生赢家排行榜！');
             }
 
+            recordRoomHistoryIfReady(room = gameState.room) {
+                if (gameState.mode !== 'multiplayer' || !room || room.status !== 'finished') return;
+                if (!this.pendingRoomReport) return;
+                const roomKey = (room.code || room.hostPeerId || 'room') + ':' + (room.startedAt || room.createdAt || 0);
+                if (this.lastRecordedRoomHistoryKey === roomKey) return;
+                this.mpManager.leaderboard.recordRoomMatch(room, this.pendingRoomReport, this.mpManager.myPlayerId, gameState.playerName);
+                this.lastRecordedRoomHistoryKey = roomKey;
+                this.updateMultiplayerDiagnostics('房间历史已记录');
+            }
+
+            formatRoomHistoryStatus(status) {
+                const map = { finished: '已结算', playing: '进行中', waiting: '等待中', closed: '已关闭', disconnected: '断线' };
+                return map[status] || (status || '-');
+            }
+
+            formatRoomHistoryDuration(minutes) {
+                if (typeof minutes !== 'number' || !isFinite(minutes)) return '-';
+                if (minutes <= 0) return '不足1分钟';
+                return `${minutes}分钟`;
+            }
+
+            formatRoomHistoryTime(value) {
+                const time = typeof value === 'number' ? value : Date.parse(value);
+                if (!time || Number.isNaN(time)) return '-';
+                return new Date(time).toLocaleString('zh-CN', { hour12: false });
+            }
+
+            renderRoomHistoryCard(record) {
+                const localPlayer = record.localPlayer || {};
+                const rankings = Array.isArray(record.rankings) ? record.rankings.slice(0, 6) : [];
+                const rankingHtml = rankings.length === 0
+                    ? '<div class="empty-tip">暂无排名详情</div>'
+                    : rankings.map(player => {
+                        const medal = player.rank <= 3 ? ['🥇', '🥈', '🥉'][player.rank - 1] : `#${player.rank}`;
+                        const label = `${medal} ${player.name} · ${player.career || '未知'}`;
+                        return `<div class="history-player"><span>${this.escapeHtml(label)}</span><strong>${(player.score || 0)}分</strong></div>`;
+                    }).join('');
+                const localRank = localPlayer.rank ? `#${localPlayer.rank}` : '未排序';
+                const localScore = `${(localPlayer.score || 0)}分 · ¥${Number(localPlayer.wealth || 0).toLocaleString()}`;
+                return `
+                    <div class="history-card">
+                        <div class="history-card-head">
+                            <div>
+                                <strong>房间 ${this.escapeHtml(record.roomCode || '-')}</strong>
+                                <small>记录时间：${this.escapeHtml(this.formatRoomHistoryTime(record.recordedAt))}</small>
+                            </div>
+                            <span class="history-badge">${this.escapeHtml(this.formatRoomHistoryStatus(record.roomStatus))}</span>
+                        </div>
+                        <div class="history-meta">
+                            <span>房主：${this.escapeHtml(record.hostName || '-')}</span>
+                            <span>玩家：${record.playerCount || 0} 人</span>
+                            <span>完成：${record.finishedCount || 0} 人</span>
+                            <span>时长：${this.escapeHtml(this.formatRoomHistoryDuration(record.durationMinutes))}</span>
+                        </div>
+                        <div class="history-highlight">
+                            <span>我的结算</span>
+                            <strong>${this.escapeHtml(localRank)} · ${this.escapeHtml(localScore)}</strong>
+                        </div>
+                        <div class="history-rankings">${rankingHtml}</div>
+                    </div>
+                `;
+            }
+
+            showRoomHistory() {
+                const list = document.getElementById('room-history-list');
+                if (!list) return;
+                const allRecords = this.mpManager.leaderboard.getRoomHistory();
+                const records = allRecords.slice(0, 12);
+                let html = '<div class="history-summary">';
+                html += `<div class="summary-chip"><strong>${records.length}</strong><span>本页记录</span></div>`;
+                html += `<div class="summary-chip"><strong>${allRecords.length}</strong><span>总记录数</span></div>`;
+                html += '<div class="summary-chip"><strong>本地</strong><span>自动保存并可导出</span></div>';
+                html += '</div>';
+                if (records.length === 0) {
+                    html += '<p class="empty-tip">暂无房间历史。完成一局多人对局后，这里会保存房间结果和排名快照。</p>';
+                } else {
+                    html += '<div class="history-list">' + records.map(record => this.renderRoomHistoryCard(record)).join('') + '</div>';
+                }
+                list.innerHTML = html;
+                this.showModal('room-history-modal');
+            }
+
+            clearRoomHistory() {
+                if (!confirm('确定清空房间历史吗？')) return;
+                this.mpManager.leaderboard.clearRoomHistory();
+                this.showRoomHistory();
+            }
             showLeaderboard() {
                 const list = document.getElementById('leaderboard-list');
                 if (!list) return;
@@ -2907,6 +3238,8 @@
                 
                 this.selectedCareer = null;
                 this.nominatedThisGame = false;
+                this.pendingRoomReport = null;
+                this.lastRecordedRoomHistoryKey = null;
                 gameState.selectedCareer = null;
                 gameState.room = null;
                 gameState.roomCode = null;

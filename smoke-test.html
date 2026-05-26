@@ -202,7 +202,7 @@
             runBtn.disabled = true;
             logEl.textContent = '';
             setSummary('运行中...');
-            preserveStorageKeys(['lifecash_save', 'lifecash_peer_config']);
+            preserveStorageKeys(['lifecash_save', 'lifecash_peer_config', 'lifecash_room_history']);
             window.__LIFECASH_MOCK_P2P__ = { peers: new Map(), seq: 1 };
 
             try {
@@ -277,8 +277,22 @@
                 if (!hostEndText.includes('房主测试') || !hostEndText.includes('客端测试')) throw new Error('房主结算页缺少房间成员');
                 if (!guestEndText.includes('房主测试') || !guestEndText.includes('客端测试')) throw new Error('客端结算页缺少房间成员');
 
+                const hostHistory = await waitFor(() => {
+                    const records = host.ui.mpManager.leaderboard.getRoomHistoryTop(1);
+                    return records.length ? records[0] : null;
+                }, '房间历史写入');
+                const guestHistory = await waitFor(() => {
+                    const records = guest.ui.mpManager.leaderboard.getRoomHistoryTop(1);
+                    return records.length ? records[0] : null;
+                }, '客端房间历史写入');
+                if (hostHistory.roomStatus !== 'finished') throw new Error('房主房间历史状态不是已结算');
+                if (guestHistory.roomStatus !== 'finished') throw new Error('客端房间历史状态不是已结算');
+                if (!Array.isArray(hostHistory.rankings) || hostHistory.rankings.length < 2) throw new Error('房间历史排名不完整');
+                if (!hostHistory.rankings.some(p => p.name === '房主测试') || !hostHistory.rankings.some(p => p.name === '客端测试')) throw new Error('房间历史缺少成员');
+                host.document.getElementById('btn-room-history').click();
+                if (!host.document.getElementById('room-history-list').textContent.includes('房主测试')) throw new Error('房间历史弹窗缺少成员');
                 log('基础联机流程通过');
-                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、断线重连、赛后结果页、最终成绩完成均正常。', 'pass');
+                setSummary('通过：创建房间、邀请加入、房主开始、客端自动进入、排行同步、断线重连、赛后结果页、房间历史、最终成绩完成均正常。', 'pass');
             } catch (err) {
                 console.error(err);
                 log(`失败: ${err.message}`);
